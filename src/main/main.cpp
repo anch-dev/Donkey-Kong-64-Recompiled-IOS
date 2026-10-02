@@ -231,6 +231,11 @@ SDL_Window* window;
 ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::gfx_data_t) {
     uint32_t flags = SDL_WINDOW_RESIZABLE;
 
+#if defined(DK64_IOS)
+    // iOS uses point-based window coordinates; request the native Retina drawable.
+    flags |= SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
+
 #if defined(__APPLE__)
     flags |= SDL_WINDOW_METAL;
 #elif defined(RT64_SDL_WINDOW_VULKAN)
