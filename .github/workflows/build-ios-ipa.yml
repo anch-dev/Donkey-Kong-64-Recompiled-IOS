@@ -36,23 +36,31 @@ jobs:
           echo "LLVM_ROOT=$(brew --prefix llvm)" >> "$GITHUB_ENV"
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
-      - name: Build N64Recomp and RSPRecomp
+      - name: Prepare private build inputs
         run: |
-          git clone https://github.com/Mr-Wiseguy/N64Recomp.git --recurse-submodules N64RecompSource
-          cd N64RecompSource
-          git checkout 2b6f05688de2abc7d86da5b4a89b84c2c6acbabe
-          git submodule update --init --recursive
-          cmake -S . -B cmake-build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build cmake-build --config Release --target N64Recomp -j "$(sysctl -n hw.ncpu)"
-          cmake --build cmake-build --config Release --target RSPRecomp -j "$(sysctl -n hw.ncpu)"
-          cp cmake-build/N64Recomp ..
-          cp cmake-build/RSPRecomp ..
+          # The ROM is intentionally never copied into the runner workspace.
+          # The private input repository contains only build-time/generated inputs.
+          # Copy only the files/directories needed by the existing public source tree;
+          # never overlay src/, include/, lib/, or other public project directories.
+          test -f extra/us.toml
+          test -f extra/n_aspMain.toml
+          test -d extra/DK64Syms
+          test -d extra/RecompiledFuncs
+          test -d extra/rsp
+          test -d extra/patches
 
-      - name: Prepare recompiler inputs
-        run: |
-          cp -R extra/. .
-          ./N64Recomp us.toml
-          ./RSPRecomp n_aspMain.toml
+          cp extra/us.toml .
+          cp extra/n_aspMain.toml .
+          cp -R extra/DK64Syms .
+          cp -R extra/RecompiledFuncs .
+          cp -R extra/rsp .
+          cp -R extra/patches .
+
+          # Assets/controller DB are distributable runtime resources, not ROM data.
+          test -d extra/assets
+          cp -R extra/assets .
+          test -f extra/recompcontrollerdb.txt
+          cp extra/recompcontrollerdb.txt .
 
       - name: Build SDL2 for iOS
         run: |
