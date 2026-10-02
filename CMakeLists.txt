@@ -7,7 +7,12 @@ endif()
 include($ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake)
 
 if (APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum OS X deployment version")
+    if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING "Minimum iOS deployment version")
+        set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "iOS architecture")
+    else()
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version")
+    endif()
 endif()
 
 project(DK64Recompiled LANGUAGES C CXX)
@@ -48,7 +53,12 @@ if (WIN32)
 endif()
 
 set(RT64_STATIC TRUE)
-set(RT64_SDL_WINDOW_VULKAN TRUE)
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(RT64_SDL_WINDOW_VULKAN FALSE)
+    add_compile_definitions(DK64_IOS=1)
+else()
+    set(RT64_SDL_WINDOW_VULKAN TRUE)
+endif()
 add_compile_definitions(HLSL_CPU)
 
 # SDL incorrectly includes a definition of _m_prefetch when compiling with clang-cl, which conflicts with the builtin definition and causes a build error. -
@@ -210,7 +220,7 @@ endif()
 if (MSVC)
     # Disable identical code folding, since this breaks mod function patching as multiple functions can get merged into one.
     target_link_options(DK64Recompiled PRIVATE /OPT:NOICF)
-elseif (APPLE)
+elseif (APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # Use a wrapper around ld64 that respects segprot's `max_prot` value in order
     # to make our executable memory writable (required for mod function patching)
     target_link_options(DK64Recompiled PRIVATE
@@ -271,7 +281,17 @@ if (APPLE)
 
     target_link_libraries(DK64Recompiled PRIVATE ${CMAKE_DL_LIBS} Threads::Threads SDL2::SDL2)
 
-    include(${CMAKE_SOURCE_DIR}/.github/macos/apple_bundle.cmake)
+    if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set_target_properties(DK64Recompiled PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/.github/ios/Info.plist"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.dk64recompiled.ios"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+            XCODE_ATTRIBUTE_GCC_PREPROCESSOR_DEFINITIONS "$(inherited);DK64_IOS=1"
+        )
+    else()
+        include(${CMAKE_SOURCE_DIR}/.github/macos/apple_bundle.cmake)
+    endif()
 endif()
 
 if (CMAKE_SYSTEM_NAME MATCHES "Linux")
@@ -355,7 +375,7 @@ target_link_libraries(DK64Recompiled PRIVATE
     librecomp
     ultramodern
     rt64
-    nfd
+    $<$<NOT:$<PLATFORM_ID:iOS>>:nfd>
 )
 
 # Embed all .nrm files in the "mods" directory
