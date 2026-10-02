@@ -30,6 +30,9 @@
 #else
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"
+#if defined(__APPLE__)
+#include "SDL2/SDL_metal.h"
+#endif
 // Undefine x11 macros that get included by SDL_syswm.h.
 #undef None
 #undef Status
