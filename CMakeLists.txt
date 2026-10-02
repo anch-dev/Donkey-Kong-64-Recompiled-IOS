@@ -164,6 +164,7 @@ add_executable(DK64Recompiled)
 set (SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/launcher_animation.cpp
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
+    $<$<PLATFORM_ID:iOS>:${CMAKE_SOURCE_DIR}/src/main/ios_platform.mm>
     ${CMAKE_SOURCE_DIR}/src/main/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/main/register_patches.cpp
     ${CMAKE_SOURCE_DIR}/src/main/theme.cpp
@@ -288,12 +289,14 @@ if (APPLE)
         find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
         find_library(METAL_FRAMEWORK Metal REQUIRED)
         find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+        find_library(AVFOUNDATION_FRAMEWORK AVFoundation REQUIRED)
         target_link_libraries(DK64Recompiled PRIVATE
             ${UIKIT_FRAMEWORK}
             ${GAMECONTROLLER_FRAMEWORK}
             ${QUARTZCORE_FRAMEWORK}
             ${METAL_FRAMEWORK}
             ${FOUNDATION_FRAMEWORK}
+            ${AVFOUNDATION_FRAMEWORK}
         )
         target_compile_definitions(DK64Recompiled PRIVATE DK64_IOS=1)
     endif()
