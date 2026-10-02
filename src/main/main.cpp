@@ -9,12 +9,20 @@
 #include <cinttypes>
 #include <chrono>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
+#if !defined(DK64_IOS)
 #include "nfd.h"
+#endif
 
 #include "ultramodern/ultra64.h"
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/config.hpp"
+#if !defined(DK64_IOS)
 #define SDL_MAIN_HANDLED
+#endif
 #ifdef _WIN32
 #include "SDL.h"
 #else
@@ -749,8 +757,10 @@ int main(int argc, char** argv) {
     std::filesystem::current_path("/var/data", ec);
 #endif
 
+#if !defined(DK64_IOS)
     // Initialize native file dialogs.
     NFD_Init();
+#endif
 
     // Initialize program settings.
     recompui::programconfig::set_program_name(dk64::program_name);
@@ -893,7 +903,9 @@ int main(int argc, char** argv) {
 
     recomp::start(cfg);
 
+#if !defined(DK64_IOS)
     NFD_Quit();
+#endif
 
     if (preloaded) {
         release_preload(preload_context);
