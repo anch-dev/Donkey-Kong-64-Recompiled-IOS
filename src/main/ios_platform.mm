@@ -39,7 +39,11 @@ extern "C" void dk64_ios_import_rom_from_documents(void) {
         return;
     }
 
-    NSURL* destination = [documentsURL URLByAppendingPathComponent:@"DK64.z64"];
+    NSURL* appSupport = [fm URLForDirectory:NSApplicationSupportDirectory inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:&error];
+    if (appSupport == nil) return;
+    NSURL* appData = [appSupport URLByAppendingPathComponent:@"DK64Recompiled" isDirectory:YES];
+    if (![fm createDirectoryAtURL:appData withIntermediateDirectories:YES attributes:nil error:&error]) return;
+    NSURL* destination = [appData URLByAppendingPathComponent:@"DK64.z64"];
     if ([fm fileExistsAtPath:destination.path]) return;
 
     for (NSURL* source in files) {
