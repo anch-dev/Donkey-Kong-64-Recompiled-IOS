@@ -23,7 +23,7 @@ jobs:
           submodules: recursive
           ref: iOS-port
 
-      - name: Get build inputs
+      - name: Get private generated build input
         uses: actions/checkout@v4
         with:
           repository: ${{ secrets.SECRET_NAME }}
@@ -38,24 +38,13 @@ jobs:
 
       - name: Prepare private generated inputs
         run: |
-          # The ROM is intentionally never copied into the runner workspace.
-          # These are generated/build-time inputs produced outside CI from the
-          # user's lawful ROM. Keep the private repository isolated from the
-          # public iOS source tree.
-          test -d extra/DK64Syms
+          # RecompiledFuncs is generated from the user's lawful ROM outside CI
+          # and is supplied through the private repository.
           test -d extra/RecompiledFuncs
-          test -d extra/rsp
-
-          cp -R extra/DK64Syms .
           cp -R extra/RecompiledFuncs .
-          cp -R extra/rsp .
 
-          # Runtime assets/controller database are copied explicitly; never
-          # overlay src/, include/, lib/, patches/, or other project directories.
-          test -d extra/assets
-          cp -R extra/assets .
-          test -f extra/recompcontrollerdb.txt
-          cp extra/recompcontrollerdb.txt .
+          # DK64Syms, rsp, assets, patches, and the controller database are
+          # already part of the public source checkout. Do not overlay them.
 
       - name: Build SDL2 for iOS
         run: |
