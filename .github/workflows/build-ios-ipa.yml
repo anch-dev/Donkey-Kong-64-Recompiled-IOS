@@ -74,7 +74,7 @@ jobs:
 
       - name: Build unsigned iOS app
         run: |
-          cmake --build cmake-build-ios --config Release --target DK64Recompiled             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             -j "$(sysctl -n hw.ncpu)"
+          cmake --build cmake-build-ios --config Release --target DK64Recompiled -j "$(sysctl -n hw.ncpu)" -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
 
       - name: Assemble app resources
         run: |
