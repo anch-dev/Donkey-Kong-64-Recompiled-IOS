@@ -15,6 +15,8 @@
 
 #if !defined(DK64_IOS)
 #include "nfd.h"
+#else
+#include "ios_platform.h"
 #endif
 
 #include "ultramodern/ultra64.h"
@@ -259,7 +261,14 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     return ultramodern::renderer::WindowHandle{ window };
 #elif defined(__APPLE__)
     SDL_MetalView view = SDL_Metal_CreateView(window);
-    return ultramodern::renderer::WindowHandle{ wmInfo.info.cocoa.window,  SDL_Metal_GetLayer(view) };
+#if defined(DK64_IOS)
+    void* ui_window = reinterpret_cast<void*>(wmInfo.info.uikit.window);
+    void* metal_layer = reinterpret_cast<void*>(SDL_Metal_GetLayer(view));
+    dk64_ios_fix_metal_layer_scale(ui_window, metal_layer);
+    return ultramodern::renderer::WindowHandle{ ui_window, metal_layer };
+#else
+    return ultramodern::renderer::WindowHandle{ wmInfo.info.cocoa.window, SDL_Metal_GetLayer(view) };
+#endif
 #else
     static_assert(false && "Unimplemented");
 #endif
@@ -767,6 +776,9 @@ int main(int argc, char** argv) {
     recompui::programconfig::set_program_id(dk64::program_id);
     
     // Initialize SDL audio and set the output frequency.
+#if defined(DK64_IOS)
+    dk64_ios_prepare_audio();
+#endif
     SDL_InitSubSystem(SDL_INIT_AUDIO);
     if (!reset_audio(48000)) {
         // It is not possible to initialize without an audio device.
