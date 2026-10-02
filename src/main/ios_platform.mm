@@ -3,6 +3,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 extern "C" void dk64_ios_prepare_audio(void) {
     AVAudioSession* session = [AVAudioSession sharedInstance];
@@ -18,6 +20,30 @@ extern "C" void dk64_ios_prepare_audio(void) {
     [session setActive:YES error:&error];
     if (error != nil) {
         NSLog(@"[DK64 iOS] AVAudioSession activation failed: %@", error);
+    }
+}
+
+extern "C" void dk64_ios_prepare_filesystem(void) {
+    NSFileManager* fm = [NSFileManager defaultManager];
+    NSURL* appSupport = [fm URLForDirectory:NSApplicationSupportDirectory
+                                   inDomain:NSUserDomainMask
+                          appropriateForURL:nil
+                                     create:YES
+                                      error:nil];
+    if (appSupport == nil) {
+        NSLog(@"[DK64 iOS] Failed to locate Application Support directory");
+        return;
+    }
+
+    NSString* dk64Directory = [appSupport URLByAppendingPathComponent:@"DK64Recompiled" isDirectory:YES].path;
+    NSError* error = nil;
+    if (![fm createDirectoryAtPath:dk64Directory withIntermediateDirectories:YES attributes:nil error:&error]) {
+        NSLog(@"[DK64 iOS] Failed to create app data directory: %@", error);
+        return;
+    }
+
+    if (chdir(dk64Directory.fileSystemRepresentation) != 0) {
+        NSLog(@"[DK64 iOS] Failed to set working directory to app data directory");
     }
 }
 
