@@ -36,27 +36,22 @@ jobs:
           echo "LLVM_ROOT=$(brew --prefix llvm)" >> "$GITHUB_ENV"
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
-      - name: Prepare private build inputs
+      - name: Prepare private generated inputs
         run: |
           # The ROM is intentionally never copied into the runner workspace.
-          # The private input repository contains only build-time/generated inputs.
-          # Copy only the files/directories needed by the existing public source tree;
-          # never overlay src/, include/, lib/, or other public project directories.
-          test -f extra/us.toml
-          test -f extra/n_aspMain.toml
+          # These are generated/build-time inputs produced outside CI from the
+          # user's lawful ROM. Keep the private repository isolated from the
+          # public iOS source tree.
           test -d extra/DK64Syms
           test -d extra/RecompiledFuncs
           test -d extra/rsp
-          test -d extra/patches
 
-          cp extra/us.toml .
-          cp extra/n_aspMain.toml .
           cp -R extra/DK64Syms .
           cp -R extra/RecompiledFuncs .
           cp -R extra/rsp .
-          cp -R extra/patches .
 
-          # Assets/controller DB are distributable runtime resources, not ROM data.
+          # Runtime assets/controller database are copied explicitly; never
+          # overlay src/, include/, lib/, patches/, or other project directories.
           test -d extra/assets
           cp -R extra/assets .
           test -f extra/recompcontrollerdb.txt
