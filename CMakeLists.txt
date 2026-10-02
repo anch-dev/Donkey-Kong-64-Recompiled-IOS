@@ -282,6 +282,23 @@ if (APPLE)
     target_link_libraries(DK64Recompiled PRIVATE ${CMAKE_DL_LIBS} Threads::Threads SDL2::SDL2)
 
     if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        # Native iOS presentation/input support used by SDL and the RT64 Metal path.
+        find_library(UIKIT_FRAMEWORK UIKit REQUIRED)
+        find_library(GAMECONTROLLER_FRAMEWORK GameController REQUIRED)
+        find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
+        find_library(METAL_FRAMEWORK Metal REQUIRED)
+        find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+        target_link_libraries(DK64Recompiled PRIVATE
+            ${UIKIT_FRAMEWORK}
+            ${GAMECONTROLLER_FRAMEWORK}
+            ${QUARTZCORE_FRAMEWORK}
+            ${METAL_FRAMEWORK}
+            ${FOUNDATION_FRAMEWORK}
+        )
+        target_compile_definitions(DK64Recompiled PRIVATE DK64_IOS=1)
+    endif()
+
+    if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
         set_target_properties(DK64Recompiled PROPERTIES
             MACOSX_BUNDLE TRUE
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/.github/ios/Info.plist"
