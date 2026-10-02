@@ -50,7 +50,7 @@ jobs:
 
       - name: Prepare recompiler inputs
         run: |
-          cp extra/* .
+          cp -R extra/. .
           ./N64Recomp us.toml
           ./RSPRecomp n_aspMain.toml
 
@@ -90,7 +90,7 @@ jobs:
           rm -rf ipa
           mkdir -p ipa/Payload
           cp -R "$APP" ipa/Payload/DK64Recompiled.app
-          /usr/bin/zip -qry "DK64Recompiled-iOS-unsigned.ipa" ipa/Payload
+          (cd ipa && /usr/bin/zip -qry ../DK64Recompiled-iOS-unsigned.ipa Payload)
           unzip -l "DK64Recompiled-iOS-unsigned.ipa" | head -40
 
       - name: Upload IPA
