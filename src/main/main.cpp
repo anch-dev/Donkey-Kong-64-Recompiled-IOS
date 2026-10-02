@@ -785,6 +785,7 @@ int main(int argc, char** argv) {
     
     // Initialize SDL audio and set the output frequency.
 #if defined(DK64_IOS)
+    dk64_ios_prepare_filesystem();
     dk64_ios_prepare_audio();
 #endif
     SDL_InitSubSystem(SDL_INIT_AUDIO);
