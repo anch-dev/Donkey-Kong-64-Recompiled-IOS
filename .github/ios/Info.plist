@@ -10,7 +10,7 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
-    <key>GCSupportedGameControllers</key><array><dict><key>ProfileName</key><string>ExtendedGamepad</string></dict></array>
+    <key>GCSupportedGameControllers</key><array><dict><key>ProfileName</key><string>ExtendedGamepad</string>    <key>UIFileSharingEnabled</key>\n    <true/>\n    <key>LSSupportsOpeningDocumentsInPlace</key>\n    <true/>\n</dict></array>
     <key>GCSupportsControllerUserInteraction</key><true/>
     <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string><string>metal</string></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
