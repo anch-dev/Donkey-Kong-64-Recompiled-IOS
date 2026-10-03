@@ -119,7 +119,7 @@ jobs:
 
       - name: Patch RT64 Plume for iOS
         run: |
-          git -C lib/rt64/src/contrib/plume apply "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
+          git -C lib/rt64/src/contrib/plume apply --3way "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
 
       - name: Configure iOS
         run: |
