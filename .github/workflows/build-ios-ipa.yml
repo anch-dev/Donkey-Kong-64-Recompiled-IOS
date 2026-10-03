@@ -27,11 +27,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SECRET_TOKEN }}
           PRIVATE_REPO: ${{ secrets.SECRET_NAME }}
-          ROM_RELEASE_TAG: private-rom
+          ROM_RELEASE_TAG: Private-ROM
         run: |
           test -n "$GH_TOKEN"
           test -n "$PRIVATE_REPO"
-          gh release download "$ROM_RELEASE_TAG"             --repo "$PRIVATE_REPO"             --pattern "donkeykong64.decompressed.us.z64"             --dir .
+          gh release download "$ROM_RELEASE_TAG" --repo "$PRIVATE_REPO" --pattern "donkeykong64.decompressed.us.z64" --dir .
           test -f donkeykong64.decompressed.us.z64
 
       - name: Install host build dependencies
@@ -49,7 +49,7 @@ jobs:
           git checkout "$N64RECOMP_COMMIT"
           git submodule update --init --recursive
 
-          cmake -DCMAKE_BUILD_TYPE=Release             -DCMAKE_MAKE_PROGRAM=ninja             -G Ninja             -S . -B cmake-build
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S . -B cmake-build
 
           cmake --build cmake-build --config Release --target N64Recomp -j "$(sysctl -n hw.ncpu)"
           cmake --build cmake-build --config Release --target RSPRecomp -j "$(sysctl -n hw.ncpu)"
@@ -75,7 +75,15 @@ jobs:
           SDL_VERSION=2.30.3
           curl -L "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz" -o SDL2.tar.gz
           tar -xzf SDL2.tar.gz
-          cmake -S "SDL2-${SDL_VERSION}" -B SDL2-build -G Ninja             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DSDL_TESTS=OFF             -DSDL_TESTS_ENABLED_BY_DEFAULT=OFF             -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/SDL2-install"
+          cmake -S "SDL2-${SDL_VERSION}" -B SDL2-build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSDL_TESTS=OFF \
+            -DSDL_TESTS_ENABLED_BY_DEFAULT=OFF \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/SDL2-install"
           cmake --build SDL2-build --config Release -j "$(sysctl -n hw.ncpu)"
           cmake --install SDL2-build
 
@@ -86,7 +94,15 @@ jobs:
 
       - name: Configure iOS
         run: |
-          cmake -S . -B cmake-build-ios -G Xcode             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios"             -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang"             -DPATCHES_LD="$LLVM_ROOT/bin/ld.lld"
+          cmake -S . -B cmake-build-ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios" \
+            -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang" \
+            -DPATCHES_LD="$LLVM_ROOT/bin/ld.lld"
 
       - name: Build unsigned iOS app
         run: |
