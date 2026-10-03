@@ -157,6 +157,30 @@ jobs:
               p.write_text(s)
           PY
 
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp")
+          s = p.read_text()
+          old = '''#elif defined(__APPLE__)
+    std::string command = "open \\"" + mods_directory.string() + "\\"";
+    std::system(command.c_str());
+#else
+    static_assert(false, "Not implemented for this platform.");
+#endif'''
+          new = '''#elif defined(__APPLE__) && defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)
+    // Opening a filesystem folder with macOS "open" is not available on iOS.
+    (void)mods_directory;
+#elif defined(__APPLE__)
+    std::string command = "open \\"" + mods_directory.string() + "\\"";
+    std::system(command.c_str());
+#else
+    static_assert(false, "Not implemented for this platform.");
+#endif'''
+          if old not in s:
+              raise SystemExit("Expected ModMenu::open_mods_folder Apple block was not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
+
       - name: Configure iOS
         run: |
           cmake -S . -B cmake-build-ios -G Xcode             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios"             -DSDL2_DIR="$GITHUB_WORKSPACE/SDL2-install/lib/cmake/SDL2"             -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang"             -DPATCHES_LD="$(brew --prefix lld)/bin/ld.lld"
