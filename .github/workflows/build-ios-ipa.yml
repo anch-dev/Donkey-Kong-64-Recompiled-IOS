@@ -34,6 +34,15 @@ jobs:
           gh release download "$ROM_RELEASE_TAG" --repo "$PRIVATE_REPO" --pattern "donkeykong64.decompressed.us.z64" --dir .
           test -f donkeykong64.decompressed.us.z64
 
+      - name: Expand DK64 compressed overlays
+        run: |
+          mv donkeykong64.decompressed.us.z64 donkeykong64.us.z64
+          clang++ decompressor.cpp -o dk64-decompressor -lz
+          ./dk64-decompressor donkeykong64.us.z64
+          test -f donkeykong64.decompressed.us.z64
+          test "$(stat -f%z donkeykong64.decompressed.us.z64)" -gt 33554432
+          rm -f donkeykong64.us.z64 dk64-decompressor
+
       - name: Install host build dependencies
         run: |
           brew install ninja llvm
