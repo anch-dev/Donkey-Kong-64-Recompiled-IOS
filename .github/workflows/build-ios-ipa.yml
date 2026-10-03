@@ -152,6 +152,8 @@ jobs:
               s = s.replace(" DEPENDS ${OUTNAME}.metallib file_to_c", " DEPENDS ${OUTNAME}.metallib")
               s = s.replace(" DEPENDS ${OUTNAME}.rw file_to_c", " DEPENDS ${OUTNAME}.rw")
               s = s.replace(" DEPENDS ${OUTNAME}.spv spirv_cross_msl", " DEPENDS ${OUTNAME}.spv")
+              s = s.replace("COMMAND xcrun -sdk macosx metal", "COMMAND xcrun -sdk iphoneos metal")
+              s = s.replace("COMMAND xcrun -sdk macosx metallib", "COMMAND xcrun -sdk iphoneos metallib")
               p.write_text(s)
           PY
 
