@@ -3,9 +3,9 @@ index 1384fe9..c76b907 100644
 --- a/plume_apple.mm
 +++ b/plume_apple.mm
 @@ -7,10 +7,17 @@
-
+ 
  #include "plume_apple.h"
-
+ 
 -#import <AppKit/AppKit.h>
  #import <Foundation/Foundation.h>
 +#import <TargetConditionals.h>
@@ -16,17 +16,17 @@ index 1384fe9..c76b907 100644
 +#import <AppKit/AppKit.h>
  #import <IOKit/IOKitLib.h>
 +#endif
-
+ 
 +#if !TARGET_OS_IPHONE
  static uint32_t plumeGetEntryProperty(io_registry_entry_t entry, CFStringRef propertyName) {
      uint32_t value = 0;
      CFTypeRef cfProp = IORegistryEntrySearchCFProperty(entry, kIOServicePlane, propertyName, kCFAllocatorDefault, kIORegistryIterateRecursively | kIORegistryIterateParents);
 @@ -27,9 +34,14 @@ static uint32_t plumeGetEntryProperty(io_registry_entry_t entry, CFStringRef pro
-
+ 
      return value;
  }
 +#endif
-
+ 
  namespace plume {
      RenderDeviceVendor getRenderDeviceVendor(uint64_t registryID) {
 +#if TARGET_OS_IPHONE
@@ -34,15 +34,15 @@ index 1384fe9..c76b907 100644
 +        return RenderDeviceVendor::APPLE;
 +#else
          io_service_t entry = IOServiceGetMatchingService(MACH_PORT_NULL, IORegistryEntryIDMatching(registryID));
-
+ 
          if (entry) {
 @@ -44,13 +56,46 @@ namespace plume {
          }
-
+ 
          return RenderDeviceVendor::UNKNOWN;
 +#endif
      }
-
+ 
 -    CGFloat getScaleFactor(NSWindow *nsWindow) {
 +    static CocoaWindowAttributes readWindowAttributes(void *windowHandle) {
 +#if TARGET_OS_IPHONE
@@ -85,10 +85,10 @@ index 1384fe9..c76b907 100644
 +        return 0;
  #endif
      }
-
+ 
 @@ -61,19 +106,8 @@ namespace plume {
          cachedAttributes = {0, 0, 0, 0};
-
+ 
          if ([NSThread isMainThread]) {
 -            NSWindow *nsWindow = (__bridge NSWindow *)windowHandle;
 -            NSRect contentFrame = [[nsWindow contentView] frame];
@@ -109,7 +109,7 @@ index 1384fe9..c76b907 100644
              updateWindowAttributesInternal(true);
              updateRefreshRateInternal(true);
 @@ -84,15 +118,8 @@ namespace plume {
-
+ 
      void CocoaWindow::updateWindowAttributesInternal(bool forceSync) {
          auto updateBlock = ^{
 -            NSWindow *nsWindow = (__bridge NSWindow *)windowHandle;
@@ -123,10 +123,10 @@ index 1384fe9..c76b907 100644
 -            cachedAttributes.height = (int)round(contentFrame.size.height * scaleFactor);
 +            cachedAttributes = readWindowAttributes(windowHandle);
          };
-
+ 
          if (forceSync) {
 @@ -104,11 +131,7 @@ namespace plume {
-
+ 
      void CocoaWindow::updateRefreshRateInternal(bool forceSync) {
          auto updateBlock = ^{
 -            NSWindow *nsWindow = (__bridge NSWindow *)windowHandle;
@@ -136,10 +136,10 @@ index 1384fe9..c76b907 100644
 -            }
 +            cachedRefreshRate.store(readRefreshRate(windowHandle));
          };
-
+ 
          if (forceSync) {
 @@ -120,19 +143,9 @@ namespace plume {
-
+ 
      void CocoaWindow::getWindowAttributes(CocoaWindowAttributes* attributes) const {
          if ([NSThread isMainThread]) {
 -            NSWindow *nsWindow = (__bridge NSWindow *)windowHandle;
@@ -162,7 +162,7 @@ index 1384fe9..c76b907 100644
              {
                  std::lock_guard<std::mutex> lock(attributesMutex);
 @@ -145,16 +158,9 @@ namespace plume {
-
+ 
      int CocoaWindow::getRefreshRate() const {
          if ([NSThread isMainThread]) {
 -            NSWindow *nsWindow = (__bridge NSWindow *)windowHandle;
@@ -180,10 +180,10 @@ index 1384fe9..c76b907 100644
 +            return freshRate;
          } else {
              int rate = cachedRefreshRate.load();
-
+ 
 @@ -165,6 +171,9 @@ namespace plume {
      }
-
+ 
      void CocoaWindow::toggleFullscreen() {
 +#if TARGET_OS_IPHONE
 +        // Fullscreen is owned by the UIKit host on iOS and iPadOS.
@@ -218,7 +218,7 @@ index 373c87e..0c24a02 100644
  
          presentBuffer->addCompletedHandler([drawableMtl, presentId, this](MTL::CommandBuffer* cmdBuffer) {
 @@ -2022,12 +2028,20 @@ namespace plume {
-
+ 
      void MetalSwapChain::setVsyncEnabled(const bool vsyncEnabled) {
          MetalAutoreleasePool releasePool;
 +#if TARGET_OS_OSX
@@ -227,7 +227,7 @@ index 373c87e..0c24a02 100644
 +        (void)vsyncEnabled;
 +#endif
      }
-
+ 
      bool MetalSwapChain::isVsyncEnabled() const {
          MetalAutoreleasePool releasePool;
 +#if TARGET_OS_OSX
@@ -236,7 +236,7 @@ index 373c87e..0c24a02 100644
 +        return true;
 +#endif
      }
-
+ 
      uint32_t MetalSwapChain::getWidth() const {
 @@ -3781,18 +3789,22 @@ namespace plume {
          // Device Selection
@@ -258,14 +258,14 @@ index 373c87e..0c24a02 100644
 +                }
              }
          }
-
+ 
          mtl = preferredDevice ? preferredDevice : MTL::CreateSystemDefaultDevice();
          mtl->retain();
 -        devices->release();
 +        if (devices != nullptr) {
 +            devices->release();
 +        }
-
+ 
          const std::string deviceName(mtl->name()->utf8String());
          description.name = deviceName;
 @@ -3797,9 +3809,19 @@ namespace plume {
@@ -291,7 +291,7 @@ index 373c87e..0c24a02 100644
          if (timestampCounterSet != nullptr) {
 @@ -4193,10 +4209,16 @@ namespace plume {
          capabilities.shaderFormat = RenderShaderFormat::METAL;
-
+ 
          // Fill device names.
 -        const NS::Array* devices = MTL::CopyAllDevices();
 -        for (NS::UInteger i = 0; i < devices->count(); i++) {
@@ -309,4 +309,5 @@ index 373c87e..0c24a02 100644
 +            device->release();
          }
      }
+ 
  
