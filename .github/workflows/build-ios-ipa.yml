@@ -117,6 +117,10 @@ jobs:
           p.write_text(s)
           PY
 
+      - name: Patch RT64 Plume for iOS
+        run: |
+          git -C lib/rt64/src/contrib/plume apply "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
+
       - name: Configure iOS
         run: |
           cmake -S . -B cmake-build-ios -G Xcode \
