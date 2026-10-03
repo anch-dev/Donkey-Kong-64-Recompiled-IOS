@@ -92,6 +92,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DSDL_TESTS=OFF \
             -DSDL_TESTS_ENABLED_BY_DEFAULT=OFF \
+            -DSDL_SHARED=OFF \
+            -DSDL_STATIC=ON \
             -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/SDL2-install"
           cmake --build SDL2-build --config Release -j "$(sysctl -n hw.ncpu)"
           cmake --install SDL2-build
@@ -110,6 +112,7 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios" \
+            -DSDL2_DIR="$GITHUB_WORKSPACE/SDL2-install/lib/cmake/SDL2" \
             -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang" \
             -DPATCHES_LD="$LLVM_ROOT/bin/ld.lld"
 
