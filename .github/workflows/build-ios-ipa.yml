@@ -125,14 +125,22 @@ jobs:
           test "$(git -C "$PLUME" hash-object plume_metal.cpp)" = "373c87e3403430d6686153efcb6a1a44a7f1a876"
           patch -d "$PLUME" -p1 -F 5 --batch --forward < "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
 
-      - name: Make file_to_c available to Xcode build scripts
+      - name: Build host file_to_c utility
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/host-tools"
+          clang++ -std=c++17 -O2 lib/rt64/src/tools/file_to_c/file_to_c.cpp -o "$GITHUB_WORKSPACE/host-tools/file_to_c"
+          chmod +x "$GITHUB_WORKSPACE/host-tools/file_to_c"
+          echo "$GITHUB_WORKSPACE/host-tools" >> "$GITHUB_PATH"
           python3 - <<'PY'
           from pathlib import Path
           for name in ("CMakeLists.txt", "lib/rt64/CMakeLists.txt"):
               p = Path(name)
               s = p.read_text()
-              s = s.replace("COMMAND file_to_c ", "COMMAND $<TARGET_FILE:file_to_c> ")
+              s = s.replace("COMMAND $<TARGET_FILE:file_to_c> ", "COMMAND file_to_c ")
+              s = s.replace(" DEPENDS ${OUTNAME}.spv file_to_c", " DEPENDS ${OUTNAME}.spv")
+              s = s.replace(" DEPENDS ${OUTNAME}.dxil file_to_c", " DEPENDS ${OUTNAME}.dxil")
+              s = s.replace(" DEPENDS ${OUTNAME}.metallib file_to_c", " DEPENDS ${OUTNAME}.metallib")
+              s = s.replace(" DEPENDS ${OUTNAME}.rw file_to_c", " DEPENDS ${OUTNAME}.rw")
               p.write_text(s)
           PY
 
