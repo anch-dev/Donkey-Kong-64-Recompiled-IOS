@@ -84,17 +84,7 @@ jobs:
           SDL_VERSION=2.30.3
           curl -L "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz" -o SDL2.tar.gz
           tar -xzf SDL2.tar.gz
-          cmake -S "SDL2-${SDL_VERSION}" -B SDL2-build -G Ninja \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DSDL_TESTS=OFF \
-            -DSDL_TESTS_ENABLED_BY_DEFAULT=OFF \
-            -DSDL_SHARED=OFF \
-            -DSDL_STATIC=ON \
-            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/SDL2-install"
+          cmake -S "SDL2-${SDL_VERSION}" -B SDL2-build -G Ninja             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DSDL_TESTS=OFF             -DSDL_TESTS_ENABLED_BY_DEFAULT=OFF             -DSDL_SHARED=OFF             -DSDL_STATIC=ON             -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/SDL2-install"
           cmake --build SDL2-build --config Release -j "$(sysctl -n hw.ncpu)"
           cmake --install SDL2-build
 
@@ -124,23 +114,19 @@ jobs:
           git -C lib/rt64 submodule update --init --recursive
           git -C lib/rt64/src/contrib/plume fetch --depth=1 origin d890ac899e505fb30040e037a4037cdeca68f033
           git -C lib/rt64/src/contrib/plume checkout --detach d890ac899e505fb30040e037a4037cdeca68f033
+          git -C lib/rt64/src/contrib/plume reset --hard d890ac899e505fb30040e037a4037cdeca68f033
 
       - name: Patch RT64 Plume for iOS
         run: |
-          git -C lib/rt64/src/contrib/plume apply "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
+          PLUME="lib/rt64/src/contrib/plume"
+          test "$(git -C "$PLUME" rev-parse HEAD)" = "d890ac899e505fb30040e037a4037cdeca68f033"
+          test "$(git -C "$PLUME" hash-object plume_apple.mm)" = "1384fe9e1a5534356085a759cbf552ca95d4911d"
+          test "$(git -C "$PLUME" hash-object plume_metal.cpp)" = "373c87e3403430d6686153efcb6a1a44a7f1a876"
+          git -C "$PLUME" apply --ignore-space-change --ignore-whitespace "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
 
       - name: Configure iOS
         run: |
-          cmake -S . -B cmake-build-ios -G Xcode \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios" \
-            -DSDL2_DIR="$GITHUB_WORKSPACE/SDL2-install/lib/cmake/SDL2" \
-            -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang" \
-            -DPATCHES_LD="$LLVM_ROOT/bin/ld.lld"
+          cmake -S . -B cmake-build-ios -G Xcode             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios"             -DSDL2_DIR="$GITHUB_WORKSPACE/SDL2-install/lib/cmake/SDL2"             -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang"             -DPATCHES_LD="$LLVM_ROOT/bin/ld.lld"
 
       - name: Build unsigned iOS app
         run: |
