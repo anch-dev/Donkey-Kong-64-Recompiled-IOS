@@ -206,22 +206,15 @@ jobs:
           from pathlib import Path
           p = Path("lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp")
           s = p.read_text()
-          old = """#elif defined(__APPLE__)
-    std::string command = "open \\"" + mods_directory.string() + "\\"";
-    std::system(command.c_str());
-#else
-    static_assert(false, "Not implemented for this platform.");
-#endif"""
-          new = """#elif defined(__APPLE__) && !defined(RECOMP_IOS)
-    std::string command = "open \\"" + mods_directory.string() + "\\"";
-    std::system(command.c_str());
-#elif defined(__APPLE__) && defined(RECOMP_IOS)
-    // Opening the host filesystem is not available from an iOS app.
-#else
-    static_assert(false, "Not implemented for this platform.");
-#endif"""
+          old = '#elif defined(__APPLE__)\\n'
+          new = '#elif defined(__APPLE__) && !defined(RECOMP_IOS)\\n'
           if old not in s:
-              raise SystemExit("Expected ui_mod_menu.cpp mod-folder platform block was not found")
+              raise SystemExit("Expected Apple mod-folder branch was not found")
+          s = s.replace(old, new, 1)
+          old = '    std::system(command.c_str());\\n#else\\n'
+          new = '    std::system(command.c_str());\\n#elif defined(__APPLE__) && defined(RECOMP_IOS)\\n    // Opening the host filesystem is not available from an iOS app.\\n#else\\n'
+          if old not in s:
+              raise SystemExit("Expected Apple mod-folder system() call was not found")
           p.write_text(s.replace(old, new, 1))
           PY
 
