@@ -163,11 +163,12 @@ jobs:
           from pathlib import Path
           p = Path("lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp")
           s = p.read_text()
-          old = '    std::system(command.c_str());\\n#else'
-          new = '    #ifndef RECOMP_IOS\\n    std::system(command.c_str());\\n    #else\\n    (void)mods_directory;\\n    #endif\\n#else'
-          if old not in s:
-              raise SystemExit("Expected ModMenu Apple system() block was not found")
-          p.write_text(s.replace(old, new, 1))
+          needle = "    std::system(command.c_str());"
+          replacement = "    #ifndef RECOMP_IOS\\n    std::system(command.c_str());\\n    #endif"
+          count = s.count(needle)
+          if count == 0:
+              raise SystemExit("No std::system() calls found in ui_mod_menu.cpp")
+          p.write_text(s.replace(needle, replacement))
           PY
 
       - name: Configure iOS
