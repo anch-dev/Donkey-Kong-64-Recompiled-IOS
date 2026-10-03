@@ -45,9 +45,10 @@ jobs:
 
       - name: Install host build dependencies
         run: |
-          brew install ninja llvm
+          brew install ninja llvm lld
           echo "LLVM_ROOT=$(brew --prefix llvm)" >> "$GITHUB_ENV"
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
 
       - name: Build N64Recomp and RSPRecomp
         env:
@@ -126,7 +127,7 @@ jobs:
 
       - name: Configure iOS
         run: |
-          cmake -S . -B cmake-build-ios -G Xcode             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios"             -DSDL2_DIR="$GITHUB_WORKSPACE/SDL2-install/lib/cmake/SDL2"             -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang"             -DPATCHES_LD="$LLVM_ROOT/bin/ld.lld"
+          cmake -S . -B cmake-build-ios -G Xcode             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios"             -DSDL2_DIR="$GITHUB_WORKSPACE/SDL2-install/lib/cmake/SDL2"             -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang"             -DPATCHES_LD="$(brew --prefix lld)/bin/ld.lld"
 
       - name: Build unsigned iOS app
         run: |
