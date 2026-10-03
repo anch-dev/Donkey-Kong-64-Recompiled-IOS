@@ -117,9 +117,15 @@ jobs:
           p.write_text(s)
           PY
 
+      - name: Pin RT64 mobile-compatible revision
+        run: |
+          git -C lib/rt64 fetch --depth=1 origin 5473732a
+          git -C lib/rt64 checkout --detach 5473732a
+          git -C lib/rt64 submodule update --init --recursive
+
       - name: Patch RT64 Plume for iOS
         run: |
-          git -C lib/rt64/src/contrib/plume apply --3way "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
+          git -C lib/rt64/src/contrib/plume apply "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
 
       - name: Configure iOS
         run: |
