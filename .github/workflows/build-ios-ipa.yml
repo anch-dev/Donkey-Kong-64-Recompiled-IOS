@@ -98,6 +98,19 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
+          # RecompFrontend is a submodule, so apply the iOS-only compatibility
+          # fix after checkout rather than modifying the upstream submodule.
+          p = Path("lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp")
+          t = p.read_text()
+          if "#include <TargetConditionals.h>" not in t:
+              t = t.replace("#include <string>\n", "#include <string>\n#include <TargetConditionals.h>\n")
+          t = t.replace(
+              "#elif defined(__APPLE__)\n    std::string command = \"open \\\"" + mods_directory.string() + "\\\\"\";\n    std::system(command.c_str());\n#else",
+              "#elif defined(__APPLE__) && !TARGET_OS_IPHONE\n    std::string command = \"open \\\"" + mods_directory.string() + "\\\\"\";\n    std::system(command.c_str());\n#elif defined(__APPLE__) && TARGET_OS_IPHONE\n    // iOS does not expose a general-purpose shell/system() API.\n    (void)mods_directory;\n#else"
+          )
+          p.write_text(t)
+
           p = Path("lib/rt64/CMakeLists.txt")
           s = p.read_text()
           s = s.replace("add_subdirectory(src/contrib/nativefiledialog-extended)\n", "if (NOT CMAKE_SYSTEM_NAME STREQUAL \"iOS\")\n    add_subdirectory(src/contrib/nativefiledialog-extended)\nendif()\n")
