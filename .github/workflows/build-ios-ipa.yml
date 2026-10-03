@@ -125,11 +125,21 @@ jobs:
           test "$(git -C "$PLUME" hash-object plume_metal.cpp)" = "373c87e3403430d6686153efcb6a1a44a7f1a876"
           patch -d "$PLUME" -p1 -F 5 --batch --forward < "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
 
-      - name: Build host file_to_c utility
+      - name: Build host shader utilities
         run: |
           mkdir -p "$GITHUB_WORKSPACE/host-tools"
           clang++ -std=c++17 -O2 lib/rt64/src/tools/file_to_c/file_to_c.cpp -o "$GITHUB_WORKSPACE/host-tools/file_to_c"
           chmod +x "$GITHUB_WORKSPACE/host-tools/file_to_c"
+
+          cmake -S lib/rt64/src/tools/spirv_cross_msl -B "$GITHUB_WORKSPACE/host-tools/spirv-cross" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+          cmake --build "$GITHUB_WORKSPACE/host-tools/spirv-cross" --config Release --target spirv_cross_msl -j "$(sysctl -n hw.ncpu)"
+          test -x "lib/rt64/src/tools/spirv_cross_msl/build/bin/spirv_cross_msl"
+          cp "lib/rt64/src/tools/spirv_cross_msl/build/bin/spirv_cross_msl" "$GITHUB_WORKSPACE/host-tools/spirv_cross_msl"
+          chmod +x "$GITHUB_WORKSPACE/host-tools/spirv_cross_msl"
+
           echo "$GITHUB_WORKSPACE/host-tools" >> "$GITHUB_PATH"
           python3 - <<'PY'
           from pathlib import Path
@@ -141,6 +151,7 @@ jobs:
               s = s.replace(" DEPENDS ${OUTNAME}.dxil file_to_c", " DEPENDS ${OUTNAME}.dxil")
               s = s.replace(" DEPENDS ${OUTNAME}.metallib file_to_c", " DEPENDS ${OUTNAME}.metallib")
               s = s.replace(" DEPENDS ${OUTNAME}.rw file_to_c", " DEPENDS ${OUTNAME}.rw")
+              s = s.replace(" DEPENDS ${OUTNAME}.spv spirv_cross_msl", " DEPENDS ${OUTNAME}.spv")
               p.write_text(s)
           PY
 
