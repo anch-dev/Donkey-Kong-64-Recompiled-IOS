@@ -131,7 +131,7 @@ jobs:
 
       - name: Build unsigned iOS app
         run: |
-          cmake --build cmake-build-ios --config Release --target DK64Recompiled -- -parallelizeTargets NO -jobs 2 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          cmake --build cmake-build-ios --config Release --target DK64Recompiled -j 2 -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
 
       - name: Assemble app resources
         run: |
