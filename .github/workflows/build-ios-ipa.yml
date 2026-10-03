@@ -119,8 +119,8 @@ jobs:
 
       - name: Pin RT64 mobile-compatible revision
         run: |
-          git -C lib/rt64 fetch --depth=1 origin 5473732a
-          git -C lib/rt64 checkout --detach 5473732a
+          git -C lib/rt64 fetch --depth=1 origin 5473732a822a4423b5696e7cb18fecc425a59875
+          git -C lib/rt64 checkout --detach 5473732a822a4423b5696e7cb18fecc425a59875
           git -C lib/rt64 submodule update --init --recursive
 
       - name: Patch RT64 Plume for iOS
