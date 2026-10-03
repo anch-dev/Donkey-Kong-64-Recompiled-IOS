@@ -122,6 +122,8 @@ jobs:
           git -C lib/rt64 fetch --depth=1 origin 5473732a822a4423b5696e7cb18fecc425a59875
           git -C lib/rt64 checkout --detach 5473732a822a4423b5696e7cb18fecc425a59875
           git -C lib/rt64 submodule update --init --recursive
+          git -C lib/rt64/src/contrib/plume fetch --depth=1 origin d890ac899e505fb30040e037a4037cdeca68f033
+          git -C lib/rt64/src/contrib/plume checkout --detach d890ac899e505fb30040e037a4037cdeca68f033
 
       - name: Patch RT64 Plume for iOS
         run: |
