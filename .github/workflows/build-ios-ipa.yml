@@ -122,7 +122,7 @@ jobs:
           test "$(git -C "$PLUME" rev-parse HEAD)" = "d890ac899e505fb30040e037a4037cdeca68f033"
           test "$(git -C "$PLUME" hash-object plume_apple.mm)" = "1384fe9e1a5534356085a759cbf552ca95d4911d"
           test "$(git -C "$PLUME" hash-object plume_metal.cpp)" = "373c87e3403430d6686153efcb6a1a44a7f1a876"
-          git -C "$PLUME" apply --ignore-space-change --ignore-whitespace "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
+          git -C "$PLUME" apply --recount --ignore-space-change --ignore-whitespace "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
 
       - name: Configure iOS
         run: |
