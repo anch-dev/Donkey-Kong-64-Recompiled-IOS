@@ -103,6 +103,20 @@ jobs:
           ./lib/vcpkg/bootstrap-vcpkg.sh -disableMetrics
           ./lib/vcpkg/vcpkg install --triplet arm64-ios
 
+      - name: Disable native file dialogs for iOS RT64 build
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/rt64/CMakeLists.txt")
+          s = p.read_text()
+          s = s.replace("add_subdirectory(src/contrib/nativefiledialog-extended)\n", "if (NOT CMAKE_SYSTEM_NAME STREQUAL \"iOS\")\n    add_subdirectory(src/contrib/nativefiledialog-extended)\nendif()\n")
+          s = s.replace("target_link_libraries(rt64 nfd)\n", "if (NOT CMAKE_SYSTEM_NAME STREQUAL \"iOS\")\n    target_link_libraries(rt64 nfd)\nendif()\n")
+          marker = "if (${RT64_STATIC})\n"
+          insert = "if (CMAKE_SYSTEM_NAME STREQUAL \"iOS\")\n    list(REMOVE_ITEM SOURCES \"${PROJECT_SOURCE_DIR}/src/gui/rt64_file_dialog.cpp\")\nendif()\n\n"
+          s = s.replace(marker, insert + marker, 1)
+          p.write_text(s)
+          PY
+
       - name: Configure iOS
         run: |
           cmake -S . -B cmake-build-ios -G Xcode \
