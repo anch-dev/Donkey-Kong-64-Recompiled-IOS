@@ -125,6 +125,17 @@ jobs:
           test "$(git -C "$PLUME" hash-object plume_metal.cpp)" = "373c87e3403430d6686153efcb6a1a44a7f1a876"
           patch -d "$PLUME" -p1 -F 5 --batch --forward < "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
 
+      - name: Make file_to_c available to Xcode build scripts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ("CMakeLists.txt", "lib/rt64/CMakeLists.txt"):
+              p = Path(name)
+              s = p.read_text()
+              s = s.replace("COMMAND file_to_c ", "COMMAND $<TARGET_FILE:file_to_c> ")
+              p.write_text(s)
+          PY
+
       - name: Configure iOS
         run: |
           cmake -S . -B cmake-build-ios -G Xcode             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios"             -DSDL2_DIR="$GITHUB_WORKSPACE/SDL2-install/lib/cmake/SDL2"             -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang"             -DPATCHES_LD="$(brew --prefix lld)/bin/ld.lld"
