@@ -101,7 +101,7 @@ jobs:
       - name: Bootstrap vcpkg
         run: |
           ./lib/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-          ./lib/vcpkg/vcpkg install --triplet arm64-ios
+          ./lib/vcpkg/vcpkg install freetype --triplet arm64-ios
 
       - name: Configure iOS
         run: |
