@@ -23,23 +23,22 @@ jobs:
           submodules: recursive
           ref: iOS-port
 
-      - name: Get private ROM
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ secrets.SECRET_NAME }}
-          token: ${{ secrets.SECRET_TOKEN || github.token }}
-          path: extra
+      - name: Download private ROM release asset
+        env:
+          GH_TOKEN: ${{ secrets.SECRET_TOKEN }}
+          PRIVATE_REPO: ${{ secrets.SECRET_NAME }}
+          ROM_RELEASE_TAG: private-rom
+        run: |
+          test -n "$GH_TOKEN"
+          test -n "$PRIVATE_REPO"
+          gh release download "$ROM_RELEASE_TAG"             --repo "$PRIVATE_REPO"             --pattern "donkeykong64.decompressed.us.z64"             --dir .
+          test -f donkeykong64.decompressed.us.z64
 
       - name: Install host build dependencies
         run: |
           brew install ninja llvm
           echo "LLVM_ROOT=$(brew --prefix llvm)" >> "$GITHUB_ENV"
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
-
-      - name: Prepare ROM
-        run: |
-          test -f extra/donkeykong64.decompressed.us.z64
-          cp extra/donkeykong64.decompressed.us.z64 .
 
       - name: Build N64Recomp and RSPRecomp
         env:
