@@ -154,6 +154,12 @@ jobs:
               s = s.replace(" DEPENDS ${OUTNAME}.spv spirv_cross_msl", " DEPENDS ${OUTNAME}.spv")
               s = s.replace("COMMAND xcrun -sdk macosx metal", "COMMAND xcrun -sdk iphoneos metal")
               s = s.replace("COMMAND xcrun -sdk macosx metallib", "COMMAND xcrun -sdk iphoneos metallib")
+              p2 = Path("lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp")
+              if p2.exists():
+                  u = p2.read_text()
+                  u = u.replace("#elif defined(__APPLE__)", "#elif defined(__APPLE__) && !defined(__IPHONEOS__)")
+                  u = u.replace("#else\n    static_assert(false, \"Not implemented for this platform.\");", "#elif !defined(__APPLE__)\n    static_assert(false, \"Not implemented for this platform.\");")
+                  p2.write_text(u)
               p.write_text(s)
           PY
 
