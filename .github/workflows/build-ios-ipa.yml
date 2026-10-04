@@ -14,6 +14,8 @@ concurrency:
 jobs:
   build-ios:
     runs-on: macos-14
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -349,6 +351,20 @@ jobs:
           path: DK64Recompiled-iOS-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish IPA to private draft release
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" DK64Recompiled-iOS-unsigned.ipa \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --draft --prerelease \
+            --title "iOS unsigned build #${GITHUB_RUN_NUMBER}" \
+            --notes "Unsigned arm64 IPA built from ${GITHUB_SHA}." \
+          || gh release upload "$TAG" DK64Recompiled-iOS-unsigned.ipa --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Upload build diagnostics
         if: failure()
