@@ -46,6 +46,9 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <!-- Required by SDL on iOS so touch/mouse input reaches the SDL event path. -->
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
     <key>UIRequiresFullScreen</key>
     <true/>
 </dict>
