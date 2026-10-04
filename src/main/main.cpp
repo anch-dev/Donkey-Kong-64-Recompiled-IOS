@@ -17,6 +17,7 @@
 #include "nfd.h"
 #else
 #include "ios_platform.h"
+#include "ios_touch_controls.h"
 #endif
 
 #include "ultramodern/ultra64.h"
@@ -283,6 +284,19 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 }
 
 void update_gfx(void*) {
+#if defined(DK64_IOS)
+    static bool touch_controls_ready = false;
+    static bool touch_controls_visible = false;
+    if (!touch_controls_ready && window != nullptr) {
+        dk64_ios_touch_controls_init(window);
+        touch_controls_ready = true;
+    }
+    bool game_running = ultramodern::is_game_started();
+    if (touch_controls_ready && game_running != touch_controls_visible) {
+        touch_controls_visible = game_running;
+        dk64_ios_touch_controls_set_visible(game_running ? 1 : 0);
+    }
+#endif
     recompinput::handle_events();
 }
 
