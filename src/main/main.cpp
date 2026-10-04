@@ -257,13 +257,6 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         exit_error("Failed to create window: %s\n", SDL_GetError());
     }
 
-#if defined(DK64_IOS)
-    // Install the native touch overlay as soon as the SDL/UI window exists.
-    // Do not defer this to the first rendered frame: on iOS the SDL animation
-    // callback can begin before the renderer/game-start state is observable.
-    dk64_ios_touch_controls_init(window);
-#endif
-
     SDL_SysWMinfo wmInfo;
     SDL_VERSION(&wmInfo.version);
     SDL_GetWindowWMInfo(window, &wmInfo);
@@ -286,6 +279,13 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     void* ui_window = reinterpret_cast<void*>(wmInfo.info.uikit.window);
     void* metal_layer = reinterpret_cast<void*>(SDL_Metal_GetLayer(view));
     dk64_ios_fix_metal_layer_scale(ui_window, metal_layer);
+
+    // SDL_Metal_CreateView() inserts the Metal view into the UIKit hierarchy.
+    // Install the touch overlay only after that happens so the overlay is
+    // guaranteed to be above the renderer and can receive UIKit touches.
+    dk64_ios_touch_controls_init(window);
+    dk64_ios_touch_controls_set_visible(1);
+
     return ultramodern::renderer::WindowHandle{ ui_window, metal_layer };
 #else
     return ultramodern::renderer::WindowHandle{ wmInfo.info.cocoa.window, SDL_Metal_GetLayer(view) };
@@ -297,17 +297,9 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 
 void update_gfx(void*) {
 #if defined(DK64_IOS)
-    static bool touch_controls_ready = false;
-    static bool touch_controls_visible = false;
-    if (!touch_controls_ready && window != nullptr) {
-        dk64_ios_touch_controls_init(window);
-        touch_controls_ready = true;
-    }
-    bool game_running = ultramodern::is_game_started();
-    if (touch_controls_ready && game_running != touch_controls_visible) {
-        touch_controls_visible = game_running;
-        dk64_ios_touch_controls_set_visible(game_running ? 1 : 0);
-    }
+    // The native overlay is always enabled on iOS. It sits above the SDL Metal
+    // view and forwards non-control touches to SDL as mouse input, which makes
+    // launcher/configuration menus tappable as well as providing the gamepad.
 #endif
     recompinput::handle_events();
 }
