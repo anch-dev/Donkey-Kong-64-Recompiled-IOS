@@ -164,11 +164,19 @@ jobs:
           from pathlib import Path
           p = Path("lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp")
           s = p.read_text()
-          needle = "std::system(command.c_str());"
-          count = s.count(needle)
-          if count == 0:
-              raise SystemExit("No system() calls found in ui_mod_menu.cpp")
-          s = s.replace(needle, "#ifndef RECOMP_IOS\n    " + needle + "\n#endif")
+          apple = """#elif defined(__APPLE__)
+    std::string command = "open \"" + mods_directory.string() + "\"";
+    std::system(command.c_str());"""
+          if s.count(apple) != 1:
+              raise SystemExit("Expected Apple mod-folder launcher block exactly once")
+          s = s.replace(
+              apple,
+              """#elif defined(__APPLE__)
+    std::string command = "open \"" + mods_directory.string() + "\"";
+#if !defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)
+    std::system(command.c_str());
+#endif"""
+          )
           p.write_text(s)
           PY
 
