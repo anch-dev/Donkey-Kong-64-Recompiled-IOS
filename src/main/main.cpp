@@ -257,6 +257,13 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         exit_error("Failed to create window: %s\n", SDL_GetError());
     }
 
+#if defined(DK64_IOS)
+    // Install the native touch overlay as soon as the SDL/UI window exists.
+    // Do not defer this to the first rendered frame: on iOS the SDL animation
+    // callback can begin before the renderer/game-start state is observable.
+    dk64_ios_touch_controls_init(window);
+#endif
+
     SDL_SysWMinfo wmInfo;
     SDL_VERSION(&wmInfo.version);
     SDL_GetWindowWMInfo(window, &wmInfo);
