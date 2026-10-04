@@ -177,7 +177,14 @@ jobs:
 
       - name: Build unsigned iOS app
         run: |
-          cmake --build cmake-build-ios --config Release --target DK64Recompiled -j 2 -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          set -o pipefail
+          cmake --build cmake-build-ios --config Release --target DK64Recompiled -j 2 -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" 2>&1 | tee build.log
+
+      - name: Report build errors
+        if: failure()
+        run: |
+          test -f build.log || exit 0
+          grep -E "error:|fatal error|undefined symbol|ld: " build.log | sort -u | head -10 | while IFS= read -r l; do echo "::error::${l:0:900}"; done
 
       - name: Assemble app resources
         run: |
@@ -210,6 +217,7 @@ jobs:
         with:
           name: DK64Recompiled-iOS-build-diagnostics
           path: |
+            build.log
             cmake-build-ios/CMakeCache.txt
             cmake-build-ios/**/*.log
           if-no-files-found: ignore
