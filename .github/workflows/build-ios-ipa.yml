@@ -163,12 +163,18 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p = Path("lib/RecompFrontend/recompui/src/composites/ui_mod_menu.cpp")
-          s = p.read_text()
-          old = '#elif defined(__APPLE__)\\n    std::string command = "open \\"" + mods_directory.string() + "\\"";\\n    std::system(command.c_str());'
-          new = '#elif defined(__APPLE__)\\n    std::string command = "open \\"" + mods_directory.string() + "\\"";\\n#if !defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)\\n    std::system(command.c_str());\\n#endif'
-          if s.count(old) != 1:
-              raise SystemExit("Expected Apple mod-folder launcher block exactly once")
-          p.write_text(s.replace(old, new))
+          lines = p.read_text().splitlines()
+          apple_index = next(i for i, line in enumerate(lines) if line.strip() == "#elif defined(__APPLE__)")
+          system_index = next(
+              i for i in range(apple_index + 1, len(lines))
+              if lines[i].strip() == "std::system(command.c_str());"
+          )
+          lines[system_index:system_index + 1] = [
+              "#if !defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)",
+              lines[system_index],
+              "#endif",
+          ]
+          p.write_text("\\n".join(lines) + "\\n")
           PY
 
       - name: Patch RT64 Apple helper for iOS (no AppKit)
