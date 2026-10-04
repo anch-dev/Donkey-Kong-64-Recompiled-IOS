@@ -64,8 +64,10 @@ jobs:
           cmake --build cmake-build --config Release --target N64Recomp -j "$(sysctl -n hw.ncpu)"
           cmake --build cmake-build --config Release --target RSPRecomp -j "$(sysctl -n hw.ncpu)"
 
-          cp cmake-build/N64Recomp ..
-          cp cmake-build/RSPRecomp ..
+          mkdir -p ../host-tools
+          cp cmake-build/N64Recomp ../host-tools/N64Recomp
+          cp cmake-build/RSPRecomp ../host-tools/RSPRecomp
+          chmod +x ../host-tools/N64Recomp ../host-tools/RSPRecomp
 
       - name: Generate recompiled game code
         run: |
@@ -77,8 +79,7 @@ jobs:
       - name: Remove ROM and recompiler sources
         run: |
           rm -f donkeykong64.decompressed.us.z64
-          # Keep N64Recomp: the Xcode PatchesLib phase runs `./N64Recomp patches.toml` to generate funcs.h.
-          rm -f RSPRecomp
+          rm -f N64Recomp RSPRecomp
           rm -rf N64RecompSource
 
       - name: Build SDL2 for iOS
@@ -125,6 +126,20 @@ jobs:
           test "$(git -C "$PLUME" hash-object plume_apple.mm)" = "1384fe9e1a5534356085a759cbf552ca95d4911d"
           test "$(git -C "$PLUME" hash-object plume_metal.cpp)" = "373c87e3403430d6686153efcb6a1a44a7f1a876"
           patch -d "$PLUME" -p1 -F 5 --batch --forward < "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
+
+      - name: Configure host patch recompiler
+        run: |
+          test -x "$GITHUB_WORKSPACE/host-tools/N64Recomp"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("CMakeLists.txt")
+          s = p.read_text()
+          old = "COMMAND ./N64Recomp patches.toml"
+          new = "COMMAND ${CMAKE_SOURCE_DIR}/host-tools/N64Recomp patches.toml"
+          if s.count(old) != 1:
+              raise SystemExit(f"Expected one patch recompiler command, found {s.count(old)}")
+          p.write_text(s.replace(old, new, 1))
+          PY
 
       - name: Build host shader utilities
         run: |
