@@ -197,9 +197,15 @@ jobs:
         if: failure()
         run: |
           test -f build.log || exit 0
-          grep -E "error:|fatal error|Undefined symbols|symbol\(s\) not found|CMake Error|BUILD FAILED|Command .* failed|\*\*\* |Error [0-9]+$" build.log | grep -v "warning:" | sort -u | head -10 | while IFS= read -r l; do echo "::error::${l:0:900}"; done
-          TAIL="$(tail -n 40 build.log | cut -c1-300 | awk '{printf "%s%%0A", $0}')"
-          echo "::error title=build.log tail::${TAIL:0:7000}"
+          enc() { sed 's/%/%25/g' | cut -c1-260 | awk '{printf "%s%%0A", $0}'; }
+          FAILED="$(grep -n -A8 'The following build commands failed' build.log | enc)"
+          echo "::error title=failed build commands::${FAILED:0:3500}"
+          N="$(grep -n 'Command PhaseScriptExecution failed' build.log | head -1 | cut -d: -f1)"
+          if [ -n "$N" ]; then
+            S=$(( N > 45 ? N - 45 : 1 ))
+            CTX="$(sed -n "${S},${N}p" build.log | enc)"
+            echo "::error title=before first PhaseScriptExecution failure::${CTX:0:7000}"
+          fi
 
       - name: Assemble app resources
         run: |
