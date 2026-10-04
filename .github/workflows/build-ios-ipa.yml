@@ -190,8 +190,32 @@ jobs:
               lines[system_index],
               "#endif",
           ]
-          p.write_text("\\n".join(lines) + "\\n")
+          p.write_text("\n".join(lines) + "\n")
           PY
+
+      - name: Stub RT64 file dialog for iOS
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/rt64/CMakeLists.txt")
+          s = p.read_text()
+          block = 'if (CMAKE_SYSTEM_NAME STREQUAL "iOS")\n    list(REMOVE_ITEM SOURCES "${PROJECT_SOURCE_DIR}/src/gui/rt64_file_dialog.cpp")\nendif()\n\n'
+          if s.count(block) != 1:
+              raise SystemExit("rt64_file_dialog REMOVE_ITEM block not found exactly once")
+          p.write_text(s.replace(block, ""))
+          PY
+          cat > lib/rt64/src/gui/rt64_file_dialog.cpp <<'EOF'
+          #include "rt64_file_dialog.h"
+
+          namespace RT64 {
+              std::atomic<bool> FileDialog::isOpen = false;
+              void FileDialog::initialize() {}
+              void FileDialog::finish() {}
+              std::filesystem::path FileDialog::getDirectoryPath() { return {}; }
+              std::filesystem::path FileDialog::getOpenFilename(const std::vector<FileFilter> &) { return {}; }
+              std::filesystem::path FileDialog::getSaveFilename(const std::vector<FileFilter> &) { return {}; }
+          }
+          EOF
 
       - name: Patch RT64 Apple helper for iOS (no AppKit)
         run: |

@@ -299,6 +299,7 @@ if (APPLE)
             ${AVFOUNDATION_FRAMEWORK}
         )
         target_compile_definitions(DK64Recompiled PRIVATE DK64_IOS=1)
+        target_sources(DK64Recompiled PRIVATE ${CMAKE_SOURCE_DIR}/src/main/ios_nfd_stub.cpp)
     endif()
 
     if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
