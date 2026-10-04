@@ -352,6 +352,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload IPA (unzipped)
+        uses: actions/upload-artifact@v7
+        with:
+          path: DK64Recompiled-iOS-unsigned.ipa
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publish IPA to private draft release
         if: github.event_name != 'pull_request'
         continue-on-error: true
