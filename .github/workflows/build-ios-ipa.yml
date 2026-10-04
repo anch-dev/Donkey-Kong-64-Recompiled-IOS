@@ -172,6 +172,19 @@ jobs:
           p.write_text(s)
           PY
 
+      - name: Patch RT64 Apple helper for iOS (no AppKit)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/rt64/src/apple/rt64_apple.mm")
+          s = p.read_text()
+          old = "#import <AppKit/AppKit.h>\n"
+          if s.count(old) != 1:
+              raise SystemExit("AppKit import not found exactly once in rt64_apple.mm")
+          s = s.replace(old, "#import <TargetConditionals.h>\n#if TARGET_OS_OSX\n#import <AppKit/AppKit.h>\n#endif\n")
+          p.write_text(s)
+          PY
+
       - name: Patch sljit Apple allocator for iOS
         run: |
           python3 - <<'PY'
