@@ -201,6 +201,8 @@ jobs:
           enc() { sed 's/%/%25/g' | cut -c1-260 | awk '{printf "%s%%0A", $0}'; }
           FAILED="$(grep -n -A8 'The following build commands failed' build.log | enc)"
           echo "::error title=failed build commands::${FAILED:0:3500}"
+          ERRS="$(grep -n -E ' error: |fatal error:|Undefined symbols|ld: error' build.log | grep -v 'warning:' | awk '!seen[$0]++' | head -15 | enc)"
+          echo "::error title=compiler errors::${ERRS:0:6000}"
           N="$(grep -n 'Command PhaseScriptExecution failed' build.log | head -1 | cut -d: -f1)"
           if [ -n "$N" ]; then
             S=$(( N > 45 ? N - 45 : 1 ))
