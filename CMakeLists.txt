@@ -307,7 +307,6 @@ if (APPLE)
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/.github/ios/Info.plist"
             XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.dk64recompiled.ios"
             XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
-            XCODE_ATTRIBUTE_GCC_PREPROCESSOR_DEFINITIONS "$(inherited);DK64_IOS=1"
         )
     else()
         include(${CMAKE_SOURCE_DIR}/.github/macos/apple_bundle.cmake)
