@@ -290,6 +290,26 @@ jobs:
           (cd ipa && /usr/bin/zip -qry ../DK64Recompiled-iOS-unsigned.ipa Payload)
           unzip -l "DK64Recompiled-iOS-unsigned.ipa" | head -40
 
+      - name: Verify IPA contents
+        if: always()
+        run: |
+          IPA=DK64Recompiled-iOS-unsigned.ipa
+          {
+            echo "APP=$APP"
+            ls -l "$IPA" || echo "IPA FILE MISSING"
+            unzip -tq "$IPA" | tail -1
+            unzip -l "$IPA" | tail -1
+            unzip -l "$IPA" | awk 'NR>3 {print $1, $4}' | sort -rn | head -12
+            BIN="$APP/DK64Recompiled"
+            ls -l "$BIN"
+            file "$BIN"
+            lipo -info "$BIN" 2>&1
+            plutil -lint "$APP/Info.plist"
+            du -sh "$APP" "$APP/assets"
+          } > ipa-report.txt 2>&1 || true
+          MSG="$(sed 's/%/%25/g' ipa-report.txt | cut -c1-200 | awk '{printf "%s%%0A", $0}')"
+          echo "::notice title=IPA report::${MSG:0:6000}"
+
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
