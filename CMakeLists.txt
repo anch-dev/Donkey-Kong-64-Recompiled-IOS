@@ -299,7 +299,8 @@ if (APPLE)
             ${AVFOUNDATION_FRAMEWORK}
         )
         target_compile_definitions(DK64Recompiled PRIVATE DK64_IOS=1)
-        target_sources(DK64Recompiled PRIVATE ${CMAKE_SOURCE_DIR}/src/main/ios_nfd_stub.cpp)
+        target_sources(DK64Recompiled PRIVATE ${CMAKE_SOURCE_DIR}/src/main/ios_nfd.mm)
+        set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main/ios_nfd.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     endif()
 
     if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
