@@ -2,6 +2,7 @@
 // Implements the NFD calls DK64 Recompiled uses on top of UIDocumentPickerViewController.
 // The picker runs in "import" mode, so iOS hands us a temporary copy of the chosen file.
 #include "nfd.h"
+#include "ios_touch_controls.h"
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -86,12 +87,14 @@ static NSArray<NSURL *> *dk64PickDocuments(BOOL multiple) {
 
     DK64PickerDelegate *delegate = [[DK64PickerDelegate alloc] init];
     picker.delegate = delegate;
+    dk64_ios_touch_controls_set_suspended(1);
     [presenter presentViewController:picker animated:YES completion:nil];
 
     // Called on the main thread: keep servicing it until the picker finishes.
     while (!delegate.done) {
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
     }
+    dk64_ios_touch_controls_set_suspended(0);
     return delegate.urls;
 }
 

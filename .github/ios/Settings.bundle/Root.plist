@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>StringsTable</key>
+    <string>Root</string>
+    <key>PreferenceSpecifiers</key>
+    <array>
+        <dict>
+            <key>Type</key>
+            <string>PSGroupSpecifier</string>
+            <key>Title</key>
+            <string>Touch Controls</string>
+            <key>FooterText</key>
+            <string>The on-screen gamepad is hidden automatically while a physical controller is connected.</string>
+        </dict>
+        <dict>
+            <key>Type</key>
+            <string>PSToggleSwitchSpecifier</string>
+            <key>Title</key>
+            <string>On-screen gamepad</string>
+            <key>Key</key>
+            <string>dk64_touch_controls_enabled</string>
+            <key>DefaultValue</key>
+            <true/>
+        </dict>
+    </array>
+</dict>
+</plist>

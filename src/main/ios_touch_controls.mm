@@ -11,6 +11,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
 
+#import <GameController/GameController.h>
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 
@@ -21,11 +22,12 @@
 namespace {
 
 SDL_Joystick* g_pad = nullptr;
-bool g_pad_failed = false;
 SDL_Window* g_sdl_window = nullptr;
 
+bool g_mapping_added = false;
+
 void create_virtual_pad() {
-    if (g_pad != nullptr || g_pad_failed) {
+    if (g_pad != nullptr) {
         return;
     }
 
@@ -39,41 +41,58 @@ void create_virtual_pad() {
     desc.product_id = 0x0064;
     desc.name = "DK64 Touch Controls";
 
-    int index = SDL_JoystickAttachVirtualEx(&desc);
-    if (index < 0) {
-        NSLog(@"[DK64 iOS] Virtual gamepad attach failed: %s", SDL_GetError());
-        g_pad_failed = true;
-        return;
+    int index = -1;
+    if (!g_mapping_added) {
+        // Register an explicit SDL controller mapping for the virtual device (button/axis index == SDL enum
+        // value) before the device is announced, so SDL reports it as a game controller.
+        index = SDL_JoystickAttachVirtualEx(&desc);
+        if (index < 0) {
+            NSLog(@"[DK64 iOS] Virtual gamepad attach failed: %s", SDL_GetError());
+            return;
+        }
+        char guid_string[64] = {};
+        SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(index), guid_string, sizeof(guid_string));
+        std::string mapping = std::string(guid_string) +
+            ",DK64 Touch Controls,"
+            "a:b0,b:b1,x:b2,y:b3,back:b4,guide:b5,start:b6,leftstick:b7,rightstick:b8,"
+            "leftshoulder:b9,rightshoulder:b10,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,"
+            "leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,platform:iOS,";
+        SDL_GameControllerAddMapping(mapping.c_str());
+        g_mapping_added = true;
+        SDL_JoystickDetachVirtual(index);
     }
 
-    // Register an explicit SDL controller mapping for the virtual device (button/axis index == SDL enum value),
-    // then re-attach so SDL announces it as a game controller.
-    char guid_string[64] = {};
-    SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(index), guid_string, sizeof(guid_string));
-    std::string mapping = std::string(guid_string) +
-        ",DK64 Touch Controls,"
-        "a:b0,b:b1,x:b2,y:b3,back:b4,guide:b5,start:b6,leftstick:b7,rightstick:b8,"
-        "leftshoulder:b9,rightshoulder:b10,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,"
-        "leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,platform:iOS,";
-    SDL_GameControllerAddMapping(mapping.c_str());
-
-    SDL_JoystickDetachVirtual(index);
     index = SDL_JoystickAttachVirtualEx(&desc);
     if (index < 0) {
-        NSLog(@"[DK64 iOS] Virtual gamepad re-attach failed: %s", SDL_GetError());
-        g_pad_failed = true;
+        NSLog(@"[DK64 iOS] Virtual gamepad (re)attach failed: %s", SDL_GetError());
         return;
     }
 
     g_pad = SDL_JoystickOpen(index);
     if (g_pad == nullptr) {
         NSLog(@"[DK64 iOS] Virtual gamepad open failed: %s", SDL_GetError());
-        g_pad_failed = true;
         return;
     }
 
     SDL_JoystickSetVirtualAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT, -32768);
     SDL_JoystickSetVirtualAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+    NSLog(@"[DK64 iOS] Virtual gamepad attached");
+}
+
+void destroy_virtual_pad() {
+    if (g_pad == nullptr) {
+        return;
+    }
+    SDL_JoystickID instance = SDL_JoystickInstanceID(g_pad);
+    SDL_JoystickClose(g_pad);
+    g_pad = nullptr;
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        if (SDL_JoystickIsVirtual(i) && SDL_JoystickGetDeviceInstanceID(i) == instance) {
+            SDL_JoystickDetachVirtual(i);
+            break;
+        }
+    }
+    NSLog(@"[DK64 iOS] Virtual gamepad detached");
 }
 
 void set_button(int button, bool down) {
@@ -438,6 +457,10 @@ static NSString* DK64ActionLabel(DK64Action action) {
 
 static DK64OverlayWindow* g_overlay_window = nil;
 static DK64TouchOverlayView* g_overlay = nil;
+static BOOL g_suspended = NO;          // temporarily hidden (e.g. while the ROM file picker is up)
+static BOOL g_observers_installed = NO;
+
+static NSString* const kTouchControlsKey = @"dk64_touch_controls_enabled";
 
 static void run_on_main(void (^block)(void)) {
     if ([NSThread isMainThread]) {
@@ -445,6 +468,20 @@ static void run_on_main(void (^block)(void)) {
     } else {
         dispatch_async(dispatch_get_main_queue(), block);
     }
+}
+
+static BOOL user_wants_touch_controls() {
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    return [defaults objectForKey:kTouchControlsKey] == nil ? YES : [defaults boolForKey:kTouchControlsKey];
+}
+
+static BOOL physical_controller_connected() {
+    for (GCController* controller in [GCController controllers]) {
+        if (controller.extendedGamepad != nil || controller.gamepad != nil) {
+            return YES;
+        }
+    }
+    return NO;
 }
 
 static void create_overlay_window() {
@@ -478,14 +515,53 @@ static void create_overlay_window() {
     window.rootViewController = controller;
 
     // Do not make this the key window: SDL's window must stay key for keyboard/text input.
-    window.hidden = NO;
-    [overlay setNeedsLayout];
-    [overlay layoutIfNeeded];
-
+    window.hidden = YES;
     g_overlay_window = window;
     g_overlay = overlay;
     NSLog(@"[DK64 iOS] Touch overlay window created: frame=%@ scale=%.1f scene=%@",
           NSStringFromCGRect(window.frame), UIScreen.mainScreen.scale, scene);
+}
+
+// Single place that decides whether the on-screen gamepad is active:
+//   on  = user setting enabled AND no physical controller connected AND not temporarily suspended.
+static void refresh_overlay_state() {
+    if (g_sdl_window == nullptr) {
+        return;
+    }
+    BOOL active = user_wants_touch_controls() && !physical_controller_connected();
+
+    if (active) {
+        create_overlay_window();
+        create_virtual_pad();
+    } else {
+        destroy_virtual_pad();
+    }
+
+    if (g_overlay_window != nil) {
+        BOOL show = active && !g_suspended;
+        if (g_overlay_window.hidden == show) {
+            g_overlay_window.hidden = !show;
+        }
+        if (!show) {
+            [g_overlay resetAll];
+        }
+    }
+}
+
+static void install_observers() {
+    if (g_observers_installed) {
+        return;
+    }
+    g_observers_installed = YES;
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    NSOperationQueue* main = [NSOperationQueue mainQueue];
+    void (^refresh)(NSNotification*) = ^(NSNotification* note) { (void)note; refresh_overlay_state(); };
+    [center addObserverForName:GCControllerDidConnectNotification object:nil queue:main usingBlock:refresh];
+    [center addObserverForName:GCControllerDidDisconnectNotification object:nil queue:main usingBlock:refresh];
+    // Fires when the on-screen gamepad switch changes in the iOS Settings app.
+    [center addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:main usingBlock:refresh];
+    [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:main usingBlock:refresh];
+    [GCController startWirelessControllerDiscoveryWithCompletionHandler:^{}];
 }
 
 extern "C" void dk64_ios_touch_controls_init(void* sdl_window) {
@@ -494,36 +570,31 @@ extern "C" void dk64_ios_touch_controls_init(void* sdl_window) {
     }
     g_sdl_window = (SDL_Window*)sdl_window;
     run_on_main(^{
-        create_overlay_window();
-        create_virtual_pad();
+        install_observers();
+        refresh_overlay_state();
     });
 }
 
 extern "C" void dk64_ios_touch_controls_set_visible(int visible) {
+    // Kept for compatibility: visibility is now decided by refresh_overlay_state()
+    // (user setting + physical controller presence), so just re-evaluate.
+    (void)visible;
+    run_on_main(^{ refresh_overlay_state(); });
+}
+
+extern "C" void dk64_ios_touch_controls_set_suspended(int suspended) {
     run_on_main(^{
-        if (visible) {
-            create_virtual_pad();
-        }
-        if (g_overlay_window == nil) {
-            return;
-        }
-        g_overlay_window.hidden = visible ? NO : YES;
-        if (!visible) {
-            [g_overlay resetAll];
-        }
+        g_suspended = suspended ? YES : NO;
+        refresh_overlay_state();
     });
 }
 
-// Called regularly from the main-thread event loop. Retries creation if the UIKit scene was not
-// ready when the SDL window was created, and keeps the overlay window visible.
+// Called regularly from the main-thread event loop. Retries creation if UIKit was not ready when the
+// SDL window was created, and re-evaluates state in case a notification was missed.
 extern "C" void dk64_ios_touch_controls_tick(void) {
     static unsigned counter = 0;
     if ((++counter % 120) != 0 || g_sdl_window == nullptr || ![NSThread isMainThread]) {
         return;
     }
-    if (g_overlay_window == nil) {
-        create_overlay_window();
-    } else if (g_overlay_window.hidden) {
-        g_overlay_window.hidden = NO;
-    }
+    refresh_overlay_state();
 }

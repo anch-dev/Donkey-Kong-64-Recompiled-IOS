@@ -219,7 +219,7 @@ jobs:
           }
           EOF
 
-      - name: Scale touch coordinates to pixels for high-DPI iOS
+      - name: Make touch behave as a mouse in RmlUi menus (iOS)
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -230,20 +230,39 @@ jobs:
               raise SystemExit("RmlUi dispatch marker not found exactly once")
           patch = (
               "#if defined(DK64_IOS) || defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)\n"
-              "            if (is_mouse_input && cur_event.type != SDL_EventType::SDL_MOUSEWHEEL) {\n"
-              "                int pw = 0, ph = 0, lw = 0, lh = 0;\n"
-              "                SDL_GetWindowSizeInPixels(window, &pw, &ph);\n"
-              "                SDL_GetWindowSize(window, &lw, &lh);\n"
-              "                if (lw > 0 && lh > 0 && (pw != lw || ph != lh)) {\n"
-              "                    float sx = (float)pw / (float)lw;\n"
-              "                    float sy = (float)ph / (float)lh;\n"
-              "                    if (cur_event.type == SDL_EventType::SDL_MOUSEMOTION) {\n"
-              "                        cur_event.motion.x = (Sint32)(cur_event.motion.x * sx);\n"
-              "                        cur_event.motion.y = (Sint32)(cur_event.motion.y * sy);\n"
-              "                    } else {\n"
-              "                        cur_event.button.x = (Sint32)(cur_event.button.x * sx);\n"
-              "                        cur_event.button.y = (Sint32)(cur_event.button.y * sy);\n"
+              "            {\n"
+              "                // SDL turns finger touches into mouse events (which == SDL_TOUCH_MOUSEID). RmlUi button\n"
+              "                // events carry no position, so a tap needs a preceding pointer move to the finger, and\n"
+              "                // the 'mouse inactive' / 'controller active' filters above must not swallow touches.\n"
+              "                const bool touch_motion = cur_event.type == SDL_EventType::SDL_MOUSEMOTION && cur_event.motion.which == SDL_TOUCH_MOUSEID;\n"
+              "                const bool touch_button = (cur_event.type == SDL_EventType::SDL_MOUSEBUTTONDOWN || cur_event.type == SDL_EventType::SDL_MOUSEBUTTONUP) && cur_event.button.which == SDL_TOUCH_MOUSEID;\n"
+              "                const bool touch_mouse = touch_motion || touch_button;\n"
+              "                const bool is_pointer_event = cur_event.type == SDL_EventType::SDL_MOUSEMOTION || cur_event.type == SDL_EventType::SDL_MOUSEBUTTONDOWN || cur_event.type == SDL_EventType::SDL_MOUSEBUTTONUP;\n"
+              "                if (touch_mouse) {\n"
+              "                    is_mouse_input = true;\n"
+              "                    if (cur_event.type != SDL_EventType::SDL_MOUSEBUTTONUP) {\n"
+              "                        mouse_moved = true;\n"
+              "                        mouse_clicked = true;\n"
               "                    }\n"
+              "                }\n"
+              "                if (is_pointer_event && (is_mouse_input || touch_mouse)) {\n"
+              "                    int pw = 0, ph = 0, lw = 0, lh = 0;\n"
+              "                    SDL_GetWindowSizeInPixels(window, &pw, &ph);\n"
+              "                    SDL_GetWindowSize(window, &lw, &lh);\n"
+              "                    if (lw > 0 && lh > 0 && (pw != lw || ph != lh)) {\n"
+              "                        float sx = (float)pw / (float)lw;\n"
+              "                        float sy = (float)ph / (float)lh;\n"
+              "                        if (cur_event.type == SDL_EventType::SDL_MOUSEMOTION) {\n"
+              "                            cur_event.motion.x = (Sint32)(cur_event.motion.x * sx);\n"
+              "                            cur_event.motion.y = (Sint32)(cur_event.motion.y * sy);\n"
+              "                        } else {\n"
+              "                            cur_event.button.x = (Sint32)(cur_event.button.x * sx);\n"
+              "                            cur_event.button.y = (Sint32)(cur_event.button.y * sy);\n"
+              "                        }\n"
+              "                    }\n"
+              "                }\n"
+              "                if (touch_button && context_capturing_mouse) {\n"
+              "                    ui_state->context->ProcessMouseMove(cur_event.button.x, cur_event.button.y, 0);\n"
               "                }\n"
               "            }\n"
               "#endif\n"
@@ -314,6 +333,7 @@ jobs:
           mkdir -p "$APP/assets"
           cp -R assets/. "$APP/assets/"
           cp recompcontrollerdb.txt "$APP/"
+          cp -R .github/ios/Settings.bundle "$APP/Settings.bundle"
           echo "APP=$APP" >> "$GITHUB_ENV"
 
       - name: Package unsigned IPA
