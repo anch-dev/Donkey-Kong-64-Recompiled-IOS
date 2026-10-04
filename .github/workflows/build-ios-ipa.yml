@@ -167,7 +167,7 @@ jobs:
           count = s.count(needle)
           if count == 0:
               raise SystemExit("No system() calls found in ui_mod_menu.cpp")
-          s = s.replace(needle, "#ifndef RECOMP_IOS\\n    " + needle + "\\n#endif")
+          s = s.replace(needle, "#ifndef RECOMP_IOS\n    " + needle + "\n#endif")
           p.write_text(s)
           PY
 
