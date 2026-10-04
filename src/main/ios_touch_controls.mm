@@ -127,7 +127,7 @@ typedef NS_ENUM(NSInteger, DK64Action) {
 @property (nonatomic, assign) DK64Action action;
 @property (nonatomic, assign) CGRect frame;
 @property (nonatomic, assign) BOOL pressed;
-@property (nonatomic, strong) CAShapeLayer* shape;
+@property (nonatomic, strong) CALayer* container;
 @end
 
 @implementation DK64Control
@@ -159,17 +159,49 @@ typedef NS_ENUM(NSInteger, DK64Action) {
     return self;
 }
 
-static UIColor* DK64ActionColor(DK64Action action) {
+static UIColor* DK64RGB(CGFloat r, CGFloat g, CGFloat b, CGFloat a = 1.0) {
+    return [UIColor colorWithRed:r green:g blue:b alpha:a];
+}
+
+// DK64 look: N64 face-button colours, barrel-wood browns, banana gold and DK's red tie.
+static void DK64Palette(DK64Action action, UIColor** light, UIColor** dark, UIColor** label) {
     switch (action) {
-    case DK64ActionA: return [UIColor colorWithRed:0.25 green:0.45 blue:1.0 alpha:1.0];
-    case DK64ActionB: return [UIColor colorWithRed:0.25 green:0.8 blue:0.35 alpha:1.0];
+    case DK64ActionA:
+        *light = DK64RGB(0.45, 0.68, 1.00); *dark = DK64RGB(0.12, 0.33, 0.85); *label = [UIColor whiteColor]; break;
+    case DK64ActionB:
+        *light = DK64RGB(0.45, 0.88, 0.40); *dark = DK64RGB(0.08, 0.55, 0.18); *label = [UIColor whiteColor]; break;
     case DK64ActionCUp:
     case DK64ActionCDown:
     case DK64ActionCLeft:
-    case DK64ActionCRight: return [UIColor colorWithRed:1.0 green:0.85 blue:0.1 alpha:1.0];
-    case DK64ActionStart: return [UIColor colorWithRed:0.9 green:0.2 blue:0.2 alpha:1.0];
-    default: return [UIColor whiteColor];
+    case DK64ActionCRight:
+        *light = DK64RGB(1.00, 0.93, 0.35); *dark = DK64RGB(0.95, 0.68, 0.05); *label = DK64RGB(0.30, 0.15, 0.02); break;
+    case DK64ActionStart:
+        *light = DK64RGB(1.00, 0.35, 0.28); *dark = DK64RGB(0.70, 0.07, 0.07); *label = [UIColor whiteColor]; break;
+    case DK64ActionMenu:
+    case DK64ActionZ:
+    case DK64ActionL:
+    case DK64ActionR:
+    default:
+        *light = DK64RGB(0.74, 0.46, 0.22); *dark = DK64RGB(0.40, 0.22, 0.08); *label = DK64RGB(1.00, 0.88, 0.30); break;
     }
+}
+
+static NSString* const kDK64FontName = @"MarkerFelt-Wide";
+
+static CATextLayer* DK64MakeText(NSString* string, CGFloat fontSize, UIColor* color, CGRect frame, UIColor* shadow) {
+    CATextLayer* text = [CATextLayer layer];
+    text.string = string;
+    text.font = (__bridge CFTypeRef)kDK64FontName;
+    text.fontSize = fontSize;
+    text.alignmentMode = kCAAlignmentCenter;
+    text.foregroundColor = color.CGColor;
+    text.contentsScale = UIScreen.mainScreen.scale;
+    text.frame = frame;
+    text.shadowColor = shadow.CGColor;
+    text.shadowOpacity = 1.0;
+    text.shadowRadius = 0;
+    text.shadowOffset = CGSizeMake(0, 1.5);
+    return text;
 }
 
 static NSString* DK64ActionLabel(DK64Action action) {
@@ -194,27 +226,56 @@ static NSString* DK64ActionLabel(DK64Action action) {
     control.action = action;
     control.frame = CGRectMake(center.x - size.width / 2, center.y - size.height / 2, size.width, size.height);
 
-    UIColor* color = DK64ActionColor(action);
-    CAShapeLayer* shape = [CAShapeLayer layer];
-    shape.frame = control.frame;
-    shape.path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, size.width, size.height)
-                                            cornerRadius:std::min(size.width, size.height) / 2].CGPath;
-    shape.fillColor = [color colorWithAlphaComponent:0.18].CGColor;
-    shape.strokeColor = [color colorWithAlphaComponent:0.75].CGColor;
-    shape.lineWidth = 2.0;
-    [self.layer addSublayer:shape];
+    UIColor *light = nil, *dark = nil, *labelColor = nil;
+    DK64Palette(action, &light, &dark, &labelColor);
+    UIColor* outlineColor = DK64RGB(0.20, 0.10, 0.03);
 
-    CATextLayer* text = [CATextLayer layer];
-    CGFloat fontSize = std::min(size.width, size.height) * (action == DK64ActionStart || action == DK64ActionMenu ? 0.38 : 0.5);
-    text.string = DK64ActionLabel(action);
-    text.fontSize = fontSize;
-    text.alignmentMode = kCAAlignmentCenter;
-    text.foregroundColor = [UIColor colorWithWhite:1.0 alpha:0.9].CGColor;
-    text.contentsScale = UIScreen.mainScreen.scale;
-    text.frame = CGRectMake(0, (size.height - fontSize * 1.2) / 2, size.width, fontSize * 1.3);
-    [shape addSublayer:text];
+    BOOL round = (action == DK64ActionA || action == DK64ActionB || action == DK64ActionCUp || action == DK64ActionCDown ||
+                  action == DK64ActionCLeft || action == DK64ActionCRight);
+    CGFloat w = size.width, h = size.height;
+    CGRect local = CGRectMake(0, 0, w, h);
+    CGFloat radius = round ? std::min(w, h) / 2 : h * 0.42;
+    UIBezierPath* path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(local, 2, 2) cornerRadius:radius];
 
-    control.shape = shape;
+    CALayer* container = [CALayer layer];
+    container.frame = control.frame;
+    container.opacity = 0.80;
+    container.shadowColor = [UIColor blackColor].CGColor;
+    container.shadowOpacity = 0.5;
+    container.shadowRadius = 3;
+    container.shadowOffset = CGSizeMake(0, 2);
+
+    CAGradientLayer* gradient = [CAGradientLayer layer];
+    gradient.frame = local;
+    gradient.colors = @[ (id)light.CGColor, (id)dark.CGColor ];
+    gradient.startPoint = CGPointMake(0.5, 0.0);
+    gradient.endPoint = CGPointMake(0.5, 1.0);
+    CAShapeLayer* mask = [CAShapeLayer layer];
+    mask.path = path.CGPath;
+    gradient.mask = mask;
+    [container addSublayer:gradient];
+
+    CAShapeLayer* outline = [CAShapeLayer layer];
+    outline.path = path.CGPath;
+    outline.fillColor = nil;
+    outline.strokeColor = outlineColor.CGColor;
+    outline.lineWidth = 3.5;
+    [container addSublayer:outline];
+
+    CAShapeLayer* gloss = [CAShapeLayer layer];
+    gloss.path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(w * 0.16, h * 0.09, w * 0.68, h * 0.30)
+                                            cornerRadius:h * 0.15].CGPath;
+    gloss.fillColor = [UIColor colorWithWhite:1.0 alpha:0.30].CGColor;
+    [container addSublayer:gloss];
+
+    CGFloat fontSize = std::min(w, h) * (action == DK64ActionStart || action == DK64ActionMenu ? 0.44 : (round ? 0.55 : 0.52));
+    CGRect textFrame = CGRectMake(0, (h - fontSize * 1.2) / 2, w, fontSize * 1.3);
+    BOOL darkLabel = (action == DK64ActionCUp || action == DK64ActionCDown || action == DK64ActionCLeft || action == DK64ActionCRight);
+    UIColor* textShadow = darkLabel ? DK64RGB(1.0, 0.95, 0.6, 0.6) : outlineColor;
+    [container addSublayer:DK64MakeText(DK64ActionLabel(action), fontSize, labelColor, textFrame, textShadow)];
+
+    [self.layer addSublayer:container];
+    control.container = container;
     [_controls addObject:control];
 }
 
@@ -238,21 +299,41 @@ static NSString* DK64ActionLabel(DK64Action action) {
     // Left analog stick.
     _stickRadius = 62 * u;
     _stickCenter = CGPointMake(left + 72 * u, bottom - 78 * u);
+    UIColor* outlineColor = DK64RGB(0.20, 0.10, 0.03);
     _stickBase = [CAShapeLayer layer];
     _stickBase.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(_stickCenter.x - _stickRadius, _stickCenter.y - _stickRadius,
                                                                        _stickRadius * 2, _stickRadius * 2)].CGPath;
-    _stickBase.fillColor = [UIColor colorWithWhite:1.0 alpha:0.10].CGColor;
-    _stickBase.strokeColor = [UIColor colorWithWhite:1.0 alpha:0.55].CGColor;
-    _stickBase.lineWidth = 2.0;
+    _stickBase.fillColor = DK64RGB(0.40, 0.22, 0.08, 0.38).CGColor;   // barrel wood
+    _stickBase.strokeColor = DK64RGB(1.00, 0.82, 0.15, 0.90).CGColor;  // banana gold rim
+    _stickBase.lineWidth = 5.0;
+    _stickBase.shadowColor = [UIColor blackColor].CGColor;
+    _stickBase.shadowOpacity = 0.5;
+    _stickBase.shadowRadius = 3;
+    _stickBase.shadowOffset = CGSizeMake(0, 2);
     [self.layer addSublayer:_stickBase];
 
-    CGFloat thumbRadius = 26 * u;
+    CAShapeLayer* innerRing = [CAShapeLayer layer];
+    innerRing.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(_stickCenter.x - _stickRadius * 0.62, _stickCenter.y - _stickRadius * 0.62,
+                                                                      _stickRadius * 1.24, _stickRadius * 1.24)].CGPath;
+    innerRing.fillColor = nil;
+    innerRing.strokeColor = outlineColor.CGColor;
+    innerRing.lineWidth = 2.0;
+    innerRing.opacity = 0.55;
+    [self.layer addSublayer:innerRing];
+
+    CGFloat thumbRadius = 28 * u;
     _stickThumb = [CAShapeLayer layer];
     _stickThumb.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(-thumbRadius, -thumbRadius, thumbRadius * 2, thumbRadius * 2)].CGPath;
-    _stickThumb.fillColor = [UIColor colorWithWhite:1.0 alpha:0.35].CGColor;
-    _stickThumb.strokeColor = [UIColor colorWithWhite:1.0 alpha:0.8].CGColor;
-    _stickThumb.lineWidth = 2.0;
+    _stickThumb.fillColor = DK64RGB(0.88, 0.14, 0.10, 0.92).CGColor;  // DK's red tie
+    _stickThumb.strokeColor = outlineColor.CGColor;
+    _stickThumb.lineWidth = 3.5;
+    _stickThumb.shadowColor = [UIColor blackColor].CGColor;
+    _stickThumb.shadowOpacity = 0.5;
+    _stickThumb.shadowRadius = 3;
+    _stickThumb.shadowOffset = CGSizeMake(0, 2);
     _stickThumb.position = _stickCenter;
+    CGFloat dkSize = thumbRadius * 0.95;
+    [_stickThumb addSublayer:DK64MakeText(@"DK", dkSize, DK64RGB(1.0, 0.86, 0.15), CGRectMake(-thumbRadius, -dkSize * 0.62, thumbRadius * 2, dkSize * 1.3), outlineColor)];
     [self.layer addSublayer:_stickThumb];
 
     // Face buttons (bottom right).
@@ -281,12 +362,12 @@ static NSString* DK64ActionLabel(DK64Action action) {
 }
 
 - (void)refreshVisuals {
-    for (DK64Control* control in _controls) {
-        UIColor* color = DK64ActionColor(control.action);
-        control.shape.fillColor = [color colorWithAlphaComponent:control.pressed ? 0.55 : 0.18].CGColor;
-    }
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    for (DK64Control* control in _controls) {
+        control.container.opacity = control.pressed ? 1.0 : 0.80;
+        control.container.transform = control.pressed ? CATransform3DMakeScale(0.92, 0.92, 1.0) : CATransform3DIdentity;
+    }
     _stickThumb.position = CGPointMake(_stickCenter.x + _stickVector.x * _stickRadius, _stickCenter.y + _stickVector.y * _stickRadius);
     [CATransaction commit];
 }
@@ -597,4 +678,16 @@ extern "C" void dk64_ios_touch_controls_tick(void) {
         return;
     }
     refresh_overlay_state();
+}
+
+extern "C" void* dk64_ios_ui_window(void) {
+    if (g_sdl_window == nullptr) {
+        return nullptr;
+    }
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(g_sdl_window, &info)) {
+        return nullptr;
+    }
+    return (__bridge void*)info.info.uikit.window;
 }

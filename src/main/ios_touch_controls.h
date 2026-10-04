@@ -13,6 +13,9 @@ void dk64_ios_touch_controls_tick(void);
 // Temporarily hides the overlay (e.g. while a system file picker is on screen).
 void dk64_ios_touch_controls_set_suspended(int suspended);
 
+// Returns the SDL window's UIWindow* (as void*), or NULL if not created yet.
+void* dk64_ios_ui_window(void);
+
 #ifdef __cplusplus
 }
 #endif
