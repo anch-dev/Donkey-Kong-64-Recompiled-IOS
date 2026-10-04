@@ -325,8 +325,8 @@ static NSString* DK64ActionLabel(DK64Action action) {
     }
 
     set_button(SDL_CONTROLLER_BUTTON_A, a);
-    set_button(SDL_CONTROLLER_BUTTON_X, b);                 // N64 B = west button in the default bindings
-    set_button(SDL_CONTROLLER_BUTTON_RIGHTSTICK, l);        // DK64 default binding for L
+    set_button(SDL_CONTROLLER_BUTTON_B, b);                 // N64 B
+    set_button(SDL_CONTROLLER_BUTTON_LEFTSHOULDER, l);     // N64 L
     set_button(SDL_CONTROLLER_BUTTON_START, start);
     set_button(SDL_CONTROLLER_BUTTON_BACK, menu);           // opens the recomp config menu
     set_axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT, z ? 32767 : -32768);   // N64 Z
