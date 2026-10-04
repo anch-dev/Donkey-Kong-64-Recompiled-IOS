@@ -280,9 +280,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     void* metal_layer = reinterpret_cast<void*>(SDL_Metal_GetLayer(view));
     dk64_ios_fix_metal_layer_scale(ui_window, metal_layer);
 
-    // SDL_Metal_CreateView() inserts the Metal view into the UIKit hierarchy.
-    // Install the touch overlay only after that happens so the overlay is
-    // guaranteed to be above the renderer and can receive UIKit touches.
+    // Install the touch overlay (own UIWindow above the SDL window) once the Metal view exists.
     dk64_ios_touch_controls_init(window);
     dk64_ios_touch_controls_set_visible(1);
 
@@ -297,9 +295,9 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 
 void update_gfx(void*) {
 #if defined(DK64_IOS)
-    // The native overlay is always enabled on iOS. It sits above the SDL Metal
-    // view and forwards non-control touches to SDL as mouse input, which makes
-    // launcher/configuration menus tappable as well as providing the gamepad.
+    // The touch overlay lives in its own transparent UIWindow above the SDL window. Touches that
+    // miss a virtual control fall through to SDL, whose touch->mouse translation drives the menus.
+    dk64_ios_touch_controls_tick();
 #endif
     recompinput::handle_events();
 }

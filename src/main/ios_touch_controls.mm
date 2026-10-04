@@ -1,6 +1,11 @@
-// On-screen touch controller for iOS. Draws a native UIKit overlay above the SDL view and
-// drives an SDL virtual gamepad, so the game sees it as an ordinary controller using the
-// default bindings (A=south, B=west, Z/R=triggers, C buttons=right stick, ...).
+// On-screen touch controller for iOS. Draws a native UIKit overlay in its OWN transparent UIWindow
+// (above the SDL window, independent of SDL's view hierarchy) and drives an SDL virtual gamepad, so
+// the game sees it as an ordinary controller using the default bindings (A=south, B=west,
+// Z/R=triggers, C buttons=right stick, ...).
+//
+// Touches that do not land on a virtual control are NOT consumed: the overlay window's hit-test
+// returns nil for them, so UIKit delivers them to the SDL window underneath, where SDL's built-in
+// touch->mouse translation drives the RmlUi menus (tap = left click).
 #include "ios_touch_controls.h"
 
 #include <SDL2/SDL.h>
@@ -18,65 +23,6 @@ namespace {
 SDL_Joystick* g_pad = nullptr;
 bool g_pad_failed = false;
 SDL_Window* g_sdl_window = nullptr;
-UITouch* g_mouse_touch = nil;
-
-static CGPoint sdlPointForViewPoint(CGPoint point, UIView* view) {
-    if (g_sdl_window == nullptr || view == nil) {
-        return point;
-    }
-
-    int windowWidth = 0;
-    int windowHeight = 0;
-    SDL_GetWindowSize(g_sdl_window, &windowWidth, &windowHeight);
-    if (windowWidth <= 0 || windowHeight <= 0 || view.bounds.size.width <= 0.0 || view.bounds.size.height <= 0.0) {
-        return point;
-    }
-
-    return CGPointMake(point.x * (CGFloat)windowWidth / view.bounds.size.width,
-                       point.y * (CGFloat)windowHeight / view.bounds.size.height);
-}
-
-static void pushMouseButton(Uint32 type, CGPoint point, UIView* view, Uint8 state) {
-    if (g_sdl_window == nullptr) {
-        return;
-    }
-
-    CGPoint p = sdlPointForViewPoint(point, view);
-    SDL_Event event;
-    SDL_zero(event);
-    event.type = type;
-    event.button.timestamp = SDL_GetTicks();
-    event.button.windowID = SDL_GetWindowID(g_sdl_window);
-    event.button.which = SDL_TOUCH_MOUSEID;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.state = state;
-    event.button.clicks = 1;
-    event.button.x = (Sint32)std::lround(p.x);
-    event.button.y = (Sint32)std::lround(p.y);
-    SDL_PushEvent(&event);
-}
-
-static void pushMouseMotion(CGPoint point, CGPoint previousPoint, UIView* view) {
-    if (g_sdl_window == nullptr) {
-        return;
-    }
-
-    CGPoint p = sdlPointForViewPoint(point, view);
-    CGPoint previous = sdlPointForViewPoint(previousPoint, view);
-
-    SDL_Event event;
-    SDL_zero(event);
-    event.type = SDL_MOUSEMOTION;
-    event.motion.timestamp = SDL_GetTicks();
-    event.motion.windowID = SDL_GetWindowID(g_sdl_window);
-    event.motion.which = SDL_TOUCH_MOUSEID;
-    event.motion.state = SDL_BUTTON(SDL_BUTTON_LEFT);
-    event.motion.x = (Sint32)std::lround(p.x);
-    event.motion.y = (Sint32)std::lround(p.y);
-    event.motion.xrel = (Sint32)std::lround(p.x - previous.x);
-    event.motion.yrel = (Sint32)std::lround(p.y - previous.y);
-    SDL_PushEvent(&event);
-}
 
 void create_virtual_pad() {
     if (g_pad != nullptr || g_pad_failed) {
@@ -346,10 +292,12 @@ static NSString* DK64ActionLabel(DK64Action action) {
     if (self.hidden || self.alpha < 0.01) {
         return nil;
     }
-    // Keep the overlay on top of the Metal view so UIKit always delivers the
-    // touch here. Menu/configuration touches are explicitly forwarded to SDL
-    // as mouse events below.
-    return self;
+    // Only claim touches that land on a virtual control or the stick zone. Everything else returns
+    // nil so UIKit passes the touch on to the SDL window below (SDL turns it into mouse input).
+    if ([self controlAtPoint:point] != nil || [self pointInStickZone:point]) {
+        return self;
+    }
+    return nil;
 }
 
 - (void)updateStickWithTouch:(UITouch*)touch {
@@ -409,12 +357,6 @@ static NSString* DK64ActionLabel(DK64Action action) {
         } else if ([self pointInStickZone:p]) {
             _assignments[key] = @"stick";
             [self updateStickWithTouch:touch];
-        } else if (g_mouse_touch == nil) {
-            // No virtual control owns this finger. Treat it as a normal left
-            // mouse click so RmlUi/recomp menus can be operated by tapping.
-            _assignments[key] = @"mouse";
-            g_mouse_touch = touch;
-            pushMouseButton(SDL_MOUSEBUTTONDOWN, p, self, SDL_PRESSED);
         }
     }
     [self applyState];
@@ -427,10 +369,6 @@ static NSString* DK64ActionLabel(DK64Action action) {
             NSString* kind = (NSString*)assigned;
             if ([kind isEqualToString:@"stick"]) {
                 [self updateStickWithTouch:touch];
-            } else if ([kind isEqualToString:@"mouse"] && g_mouse_touch == touch) {
-                CGPoint previous = [touch previousLocationInView:self];
-                CGPoint current = [touch locationInView:self];
-                pushMouseMotion(current, previous, self);
             }
         }
     }
@@ -447,10 +385,6 @@ static NSString* DK64ActionLabel(DK64Action action) {
             NSString* kind = (NSString*)assigned;
             if ([kind isEqualToString:@"stick"]) {
                 _stickVector = CGPointZero;
-            } else if ([kind isEqualToString:@"mouse"] && g_mouse_touch == touch) {
-                CGPoint p = [touch locationInView:self];
-                pushMouseButton(SDL_MOUSEBUTTONUP, p, self, SDL_RELEASED);
-                g_mouse_touch = nil;
             }
         }
         [_assignments removeObjectForKey:key];
@@ -472,62 +406,124 @@ static NSString* DK64ActionLabel(DK64Action action) {
     }
     [_assignments removeAllObjects];
     _stickVector = CGPointZero;
-    g_mouse_touch = nil;
     [self applyState];
 }
 
 @end
 
+// Transparent window that only accepts touches on virtual controls.
+@interface DK64OverlayWindow : UIWindow
+@end
+
+@implementation DK64OverlayWindow
+- (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
+    UIView* hit = [super hitTest:point withEvent:event];
+    // Hitting the bare window means "no control here": let the SDL window below handle the touch.
+    // (The overlay view is the root view and only returns itself when a control/stick was hit.)
+    if (hit == self) {
+        return nil;
+    }
+    return hit;
+}
+@end
+
+@interface DK64OverlayViewController : UIViewController
+@end
+
+@implementation DK64OverlayViewController
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
+- (BOOL)prefersStatusBarHidden { return YES; }
+- (BOOL)prefersHomeIndicatorAutoHidden { return YES; }
+@end
+
+static DK64OverlayWindow* g_overlay_window = nil;
 static DK64TouchOverlayView* g_overlay = nil;
+
+static void run_on_main(void (^block)(void)) {
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), block);
+    }
+}
+
+static void create_overlay_window() {
+    if (g_overlay_window != nil || g_sdl_window == nullptr) {
+        return;
+    }
+
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(g_sdl_window, &info)) {
+        NSLog(@"[DK64 iOS] Touch controls: SDL_GetWindowWMInfo failed: %s", SDL_GetError());
+        return;
+    }
+    UIWindow* sdlUIWindow = info.info.uikit.window;
+
+    DK64OverlayWindow* window = nil;
+    UIWindowScene* scene = sdlUIWindow.windowScene;
+    if (scene != nil) {
+        window = [[DK64OverlayWindow alloc] initWithWindowScene:scene];
+    } else {
+        window = [[DK64OverlayWindow alloc] initWithFrame:(sdlUIWindow != nil ? sdlUIWindow.bounds : UIScreen.mainScreen.bounds)];
+    }
+    window.backgroundColor = [UIColor clearColor];
+    window.opaque = NO;
+    window.windowLevel = UIWindowLevelNormal + 100;
+
+    DK64OverlayViewController* controller = [[DK64OverlayViewController alloc] init];
+    DK64TouchOverlayView* overlay = [[DK64TouchOverlayView alloc] initWithFrame:window.bounds];
+    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    controller.view = overlay;
+    window.rootViewController = controller;
+
+    // Do not make this the key window: SDL's window must stay key for keyboard/text input.
+    window.hidden = NO;
+    [overlay setNeedsLayout];
+    [overlay layoutIfNeeded];
+
+    g_overlay_window = window;
+    g_overlay = overlay;
+    NSLog(@"[DK64 iOS] Touch overlay window created: frame=%@ scale=%.1f scene=%@",
+          NSStringFromCGRect(window.frame), UIScreen.mainScreen.scale, scene);
+}
 
 extern "C" void dk64_ios_touch_controls_init(void* sdl_window) {
     if (sdl_window == nullptr) {
         return;
     }
     g_sdl_window = (SDL_Window*)sdl_window;
-
-    if (g_overlay != nil) {
-        return;
-    }
-
-    SDL_SysWMinfo info;
-    SDL_VERSION(&info.version);
-    if (!SDL_GetWindowWMInfo((SDL_Window*)sdl_window, &info)) {
-        NSLog(@"[DK64 iOS] Touch controls: SDL_GetWindowWMInfo failed: %s", SDL_GetError());
-        return;
-    }
-
-    UIWindow* uiWindow = info.info.uikit.window;
-    UIView* parent = uiWindow.rootViewController.view ?: uiWindow;
-    if (parent == nil) {
-        return;
-    }
-
-    g_overlay = [[DK64TouchOverlayView alloc] initWithFrame:parent.bounds];
-    g_overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    g_overlay.hidden = NO;
-    g_overlay.userInteractionEnabled = YES;
-    [parent addSubview:g_overlay];
-    [parent bringSubviewToFront:g_overlay];
-    [g_overlay setNeedsLayout];
-    NSLog(@"[DK64 iOS] Touch overlay attached above SDL/Metal view (%@)", parent);
+    run_on_main(^{
+        create_overlay_window();
+        create_virtual_pad();
+    });
 }
 
 extern "C" void dk64_ios_touch_controls_set_visible(int visible) {
-    if (g_overlay == nil) {
+    run_on_main(^{
+        if (visible) {
+            create_virtual_pad();
+        }
+        if (g_overlay_window == nil) {
+            return;
+        }
+        g_overlay_window.hidden = visible ? NO : YES;
+        if (!visible) {
+            [g_overlay resetAll];
+        }
+    });
+}
+
+// Called regularly from the main-thread event loop. Retries creation if the UIKit scene was not
+// ready when the SDL window was created, and keeps the overlay window visible.
+extern "C" void dk64_ios_touch_controls_tick(void) {
+    static unsigned counter = 0;
+    if ((++counter % 120) != 0 || g_sdl_window == nullptr || ![NSThread isMainThread]) {
         return;
     }
-    if (visible) {
-        create_virtual_pad();
-    }
-    g_overlay.hidden = visible ? NO : YES;
-    if (visible) {
-        UIView* parent = g_overlay.superview;
-        if (parent != nil) {
-            [parent bringSubviewToFront:g_overlay];
-        }
-    }
-    if (!visible) {
-        [g_overlay resetAll];
+    if (g_overlay_window == nil) {
+        create_overlay_window();
+    } else if (g_overlay_window.hidden) {
+        g_overlay_window.hidden = NO;
     }
 }

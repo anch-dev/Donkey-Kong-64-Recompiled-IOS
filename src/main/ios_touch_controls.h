@@ -8,6 +8,8 @@ extern "C" {
 void dk64_ios_touch_controls_init(void* sdl_window);
 // Shows/hides the overlay. The virtual gamepad is created the first time it is shown.
 void dk64_ios_touch_controls_set_visible(int visible);
+// Call regularly from the main thread; (re)creates the overlay window if needed and keeps it visible.
+void dk64_ios_touch_controls_tick(void);
 
 #ifdef __cplusplus
 }
