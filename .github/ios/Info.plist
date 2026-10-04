@@ -1,18 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleDisplayName</key><string>DK64 Recompiled</string>
-<key>CFBundleExecutable</key><string>DK64Recompiled</string>
-<key>CFBundleIdentifier</key><string>com.dk64recompiled.ios</string>
-<key>CFBundleName</key><string>DK64Recompiled</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.0.3</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>LSRequiresIPhoneOS</key><true/>
-<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
-    <key>GCSupportedGameControllers</key><array><dict><key>ProfileName</key><string>ExtendedGamepad</string>    <key>UIFileSharingEnabled</key>\n    <true/>\n    <key>LSSupportsOpeningDocumentsInPlace</key>\n    <true/>\n</dict></array>
-    <key>GCSupportsControllerUserInteraction</key><true/>
-    <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string><string>metal</string></array>
-<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
-<key>UIRequiresFullScreen</key><true/>
-</dict></plist>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>DK64 Recompiled</string>
+    <key>CFBundleExecutable</key>
+    <string>DK64Recompiled</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.dk64recompiled.ios</string>
+    <key>CFBundleName</key>
+    <string>DK64Recompiled</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.3</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>1</integer>
+        <integer>2</integer>
+    </array>
+    <key>GCSupportedGameControllers</key>
+    <array>
+        <dict>
+            <key>ProfileName</key>
+            <string>ExtendedGamepad</string>
+        </dict>
+    </array>
+    <key>GCSupportsControllerUserInteraction</key>
+    <true/>
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>arm64</string>
+        <string>metal</string>
+    </array>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UIRequiresFullScreen</key>
+    <true/>
+</dict>
+</plist>
