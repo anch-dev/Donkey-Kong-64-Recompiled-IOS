@@ -45,6 +45,17 @@ static UIViewController *dk64TopViewController() {
         }
     }
 
+    if (window == nil) {
+        // SDL uses the legacy (scene-less) window lifecycle, so connectedScenes can be empty.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        window = UIApplication.sharedApplication.keyWindow;
+        if (window == nil) {
+            window = UIApplication.sharedApplication.windows.firstObject;
+        }
+#pragma clang diagnostic pop
+    }
+
     UIViewController *controller = window.rootViewController;
     while (controller.presentedViewController != nil) {
         controller = controller.presentedViewController;

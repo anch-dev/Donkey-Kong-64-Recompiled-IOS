@@ -217,6 +217,38 @@ jobs:
           }
           EOF
 
+      - name: Scale touch coordinates to pixels for high-DPI iOS
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/RecompFrontend/recompui/src/base/ui_state.cpp")
+          s = p.read_text()
+          marker = "            // Send the event to RmlUi if this type of event is being captured.\n"
+          if s.count(marker) != 1:
+              raise SystemExit("RmlUi dispatch marker not found exactly once")
+          patch = (
+              "#if defined(DK64_IOS) || defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)\n"
+              "            if (is_mouse_input && cur_event.type != SDL_EventType::SDL_MOUSEWHEEL) {\n"
+              "                int pw = 0, ph = 0, lw = 0, lh = 0;\n"
+              "                SDL_GetWindowSizeInPixels(window, &pw, &ph);\n"
+              "                SDL_GetWindowSize(window, &lw, &lh);\n"
+              "                if (lw > 0 && lh > 0 && (pw != lw || ph != lh)) {\n"
+              "                    float sx = (float)pw / (float)lw;\n"
+              "                    float sy = (float)ph / (float)lh;\n"
+              "                    if (cur_event.type == SDL_EventType::SDL_MOUSEMOTION) {\n"
+              "                        cur_event.motion.x = (Sint32)(cur_event.motion.x * sx);\n"
+              "                        cur_event.motion.y = (Sint32)(cur_event.motion.y * sy);\n"
+              "                    } else {\n"
+              "                        cur_event.button.x = (Sint32)(cur_event.button.x * sx);\n"
+              "                        cur_event.button.y = (Sint32)(cur_event.button.y * sy);\n"
+              "                    }\n"
+              "                }\n"
+              "            }\n"
+              "#endif\n"
+          )
+          p.write_text(s.replace(marker, patch + marker, 1))
+          PY
+
       - name: Patch RT64 Apple helper for iOS (no AppKit)
         run: |
           python3 - <<'PY'
