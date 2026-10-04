@@ -71,15 +71,15 @@ jobs:
 
       - name: Generate recompiled game code
         run: |
-          ./N64Recomp us.toml
-          ./RSPRecomp n_aspMain.toml
+          ./host-tools/N64Recomp us.toml
+          ./host-tools/RSPRecomp n_aspMain.toml
           test -d RecompiledFuncs
           test -f rsp/n_aspMain.cpp
 
       - name: Remove ROM and recompiler sources
         run: |
           rm -f donkeykong64.decompressed.us.z64
-          rm -f N64Recomp RSPRecomp
+          rm -f host-tools/N64Recomp host-tools/RSPRecomp
           rm -rf N64RecompSource
 
       - name: Build SDL2 for iOS
