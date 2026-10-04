@@ -10,7 +10,7 @@ extern "C" void dk64_ios_prepare_audio(void) {
     AVAudioSession* session = [AVAudioSession sharedInstance];
     NSError* error = nil;
     [session setCategory:AVAudioSessionCategoryPlayback
-                     mode:AVAudioSessionModeGame
+                     mode:AVAudioSessionModeDefault
                   options:AVAudioSessionCategoryOptionMixWithOthers
                     error:&error];
     if (error != nil) {
