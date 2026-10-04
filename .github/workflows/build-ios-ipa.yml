@@ -171,6 +171,19 @@ jobs:
           p.write_text(s)
           PY
 
+      - name: Patch sljit Apple allocator for iOS
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/N64ModernRuntime/N64Recomp/lib/sljit/sljit_src/allocator_src/sljitExecAllocatorApple.c")
+          s = p.read_text()
+          marker = "#else /* !TARGET_OS_OSX */\n"
+          if s.count(marker) != 1:
+              raise SystemExit("sljit Apple allocator marker not found exactly once")
+          s = s.replace(marker, marker + "\n#ifndef SLJIT_UPDATE_WX_FLAGS\n#define SLJIT_UPDATE_WX_FLAGS(from, to, enable_exec)\n#endif\n")
+          p.write_text(s)
+          PY
+
       - name: Configure iOS
         run: |
           cmake -S . -B cmake-build-ios -G Xcode             -DCMAKE_SYSTEM_NAME=iOS             -DCMAKE_OSX_SYSROOT=iphoneos             -DCMAKE_OSX_ARCHITECTURES=arm64             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/SDL2-install;$GITHUB_WORKSPACE/lib/vcpkg/installed/arm64-ios"             -DSDL2_DIR="$GITHUB_WORKSPACE/SDL2-install/lib/cmake/SDL2"             -DPATCHES_C_COMPILER="$LLVM_ROOT/bin/clang"             -DPATCHES_LD="$(brew --prefix lld)/bin/ld.lld"             -DCMAKE_CXX_FLAGS="-DRECOMP_IOS=1"
