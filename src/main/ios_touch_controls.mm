@@ -17,6 +17,66 @@ namespace {
 
 SDL_Joystick* g_pad = nullptr;
 bool g_pad_failed = false;
+SDL_Window* g_sdl_window = nullptr;
+UITouch* g_mouse_touch = nil;
+
+static CGPoint sdlPointForViewPoint(CGPoint point, UIView* view) {
+    if (g_sdl_window == nullptr || view == nil) {
+        return point;
+    }
+
+    int windowWidth = 0;
+    int windowHeight = 0;
+    SDL_GetWindowSize(g_sdl_window, &windowWidth, &windowHeight);
+    if (windowWidth <= 0 || windowHeight <= 0 || view.bounds.size.width <= 0.0 || view.bounds.size.height <= 0.0) {
+        return point;
+    }
+
+    return CGPointMake(point.x * (CGFloat)windowWidth / view.bounds.size.width,
+                       point.y * (CGFloat)windowHeight / view.bounds.size.height);
+}
+
+static void pushMouseButton(Uint32 type, CGPoint point, UIView* view, Uint8 state) {
+    if (g_sdl_window == nullptr) {
+        return;
+    }
+
+    CGPoint p = sdlPointForViewPoint(point, view);
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = type;
+    event.button.timestamp = SDL_GetTicks();
+    event.button.windowID = SDL_GetWindowID(g_sdl_window);
+    event.button.which = SDL_TOUCH_MOUSEID;
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.state = state;
+    event.button.clicks = 1;
+    event.button.x = (Sint32)std::lround(p.x);
+    event.button.y = (Sint32)std::lround(p.y);
+    SDL_PushEvent(&event);
+}
+
+static void pushMouseMotion(CGPoint point, CGPoint previousPoint, UIView* view) {
+    if (g_sdl_window == nullptr) {
+        return;
+    }
+
+    CGPoint p = sdlPointForViewPoint(point, view);
+    CGPoint previous = sdlPointForViewPoint(previousPoint, view);
+
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = SDL_MOUSEMOTION;
+    event.motion.timestamp = SDL_GetTicks();
+    event.motion.windowID = SDL_GetWindowID(g_sdl_window);
+    event.motion.which = SDL_TOUCH_MOUSEID;
+    event.motion.state = SDL_BUTTON(SDL_BUTTON_LEFT);
+    event.motion.x = (Sint32)std::lround(p.x);
+    event.motion.y = (Sint32)std::lround(p.y);
+    event.motion.xrel = (Sint32)std::lround(p.x - previous.x);
+    event.motion.yrel = (Sint32)std::lround(p.y - previous.y);
+    SDL_PushEvent(&event);
+}
 
 void create_virtual_pad() {
     if (g_pad != nullptr || g_pad_failed) {
@@ -286,10 +346,10 @@ static NSString* DK64ActionLabel(DK64Action action) {
     if (self.hidden || self.alpha < 0.01) {
         return nil;
     }
-    if ([self pointInStickZone:point] || [self controlAtPoint:point] != nil) {
-        return self;
-    }
-    return nil;
+    // Keep the overlay on top of the Metal view so UIKit always delivers the
+    // touch here. Menu/configuration touches are explicitly forwarded to SDL
+    // as mouse events below.
+    return self;
 }
 
 - (void)updateStickWithTouch:(UITouch*)touch {
@@ -349,6 +409,12 @@ static NSString* DK64ActionLabel(DK64Action action) {
         } else if ([self pointInStickZone:p]) {
             _assignments[key] = @"stick";
             [self updateStickWithTouch:touch];
+        } else if (g_mouse_touch == nil) {
+            // No virtual control owns this finger. Treat it as a normal left
+            // mouse click so RmlUi/recomp menus can be operated by tapping.
+            _assignments[key] = @"mouse";
+            g_mouse_touch = touch;
+            pushMouseButton(SDL_MOUSEBUTTONDOWN, p, self, SDL_PRESSED);
         }
     }
     [self applyState];
@@ -358,7 +424,14 @@ static NSString* DK64ActionLabel(DK64Action action) {
     for (UITouch* touch in touches) {
         id assigned = _assignments[[NSValue valueWithNonretainedObject:touch]];
         if ([assigned isKindOfClass:[NSString class]]) {
-            [self updateStickWithTouch:touch];
+            NSString* kind = (NSString*)assigned;
+            if ([kind isEqualToString:@"stick"]) {
+                [self updateStickWithTouch:touch];
+            } else if ([kind isEqualToString:@"mouse"] && g_mouse_touch == touch) {
+                CGPoint previous = [touch previousLocationInView:self];
+                CGPoint current = [touch locationInView:self];
+                pushMouseMotion(current, previous, self);
+            }
         }
     }
     [self applyState];
@@ -371,7 +444,14 @@ static NSString* DK64ActionLabel(DK64Action action) {
         if ([assigned isKindOfClass:[DK64Control class]]) {
             ((DK64Control*)assigned).pressed = NO;
         } else if ([assigned isKindOfClass:[NSString class]]) {
-            _stickVector = CGPointZero;
+            NSString* kind = (NSString*)assigned;
+            if ([kind isEqualToString:@"stick"]) {
+                _stickVector = CGPointZero;
+            } else if ([kind isEqualToString:@"mouse"] && g_mouse_touch == touch) {
+                CGPoint p = [touch locationInView:self];
+                pushMouseButton(SDL_MOUSEBUTTONUP, p, self, SDL_RELEASED);
+                g_mouse_touch = nil;
+            }
         }
         [_assignments removeObjectForKey:key];
     }
@@ -400,7 +480,12 @@ static NSString* DK64ActionLabel(DK64Action action) {
 static DK64TouchOverlayView* g_overlay = nil;
 
 extern "C" void dk64_ios_touch_controls_init(void* sdl_window) {
-    if (g_overlay != nil || sdl_window == nullptr) {
+    if (sdl_window == nullptr) {
+        return;
+    }
+    g_sdl_window = (SDL_Window*)sdl_window;
+
+    if (g_overlay != nil) {
         return;
     }
 
@@ -419,8 +504,12 @@ extern "C" void dk64_ios_touch_controls_init(void* sdl_window) {
 
     g_overlay = [[DK64TouchOverlayView alloc] initWithFrame:parent.bounds];
     g_overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    g_overlay.hidden = YES;
+    g_overlay.hidden = NO;
+    g_overlay.userInteractionEnabled = YES;
     [parent addSubview:g_overlay];
+    [parent bringSubviewToFront:g_overlay];
+    [g_overlay setNeedsLayout];
+    NSLog(@"[DK64 iOS] Touch overlay attached above SDL/Metal view (%@)", parent);
 }
 
 extern "C" void dk64_ios_touch_controls_set_visible(int visible) {
@@ -431,6 +520,12 @@ extern "C" void dk64_ios_touch_controls_set_visible(int visible) {
         create_virtual_pad();
     }
     g_overlay.hidden = visible ? NO : YES;
+    if (visible) {
+        UIView* parent = g_overlay.superview;
+        if (parent != nil) {
+            [parent bringSubviewToFront:g_overlay];
+        }
+    }
     if (!visible) {
         [g_overlay resetAll];
     }
