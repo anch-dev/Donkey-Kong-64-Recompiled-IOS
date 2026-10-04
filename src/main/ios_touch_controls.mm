@@ -472,6 +472,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
     }
     [_assignments removeAllObjects];
     _stickVector = CGPointZero;
+    g_mouse_touch = nil;
     [self applyState];
 }
 
