@@ -237,6 +237,11 @@ jobs:
           echo "::error title=failed build commands::${FAILED:0:3500}"
           ERRS="$(grep -n -E ' error: |fatal error:|Undefined symbols|ld: error' build.log | grep -v 'warning:' | awk '!seen[$0]++' | head -15 | enc)"
           echo "::error title=compiler errors::${ERRS:0:6000}"
+          U="$(grep -n 'Undefined symbols for architecture' build.log | head -1 | cut -d: -f1)"
+          if [ -n "$U" ]; then
+            UND="$(sed -n "${U},$((U+45))p" build.log | enc)"
+            echo "::error title=undefined symbols::${UND:0:8000}"
+          fi
           N="$(grep -n 'Command PhaseScriptExecution failed' build.log | head -1 | cut -d: -f1)"
           if [ -n "$N" ]; then
             S=$(( N > 45 ? N - 45 : 1 ))
