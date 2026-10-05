@@ -7,6 +7,7 @@
 // returns nil for them, so UIKit delivers them to the SDL window underneath, where SDL's built-in
 // touch->mouse translation drives the RmlUi menus (tap = left click).
 #include "ios_touch_controls.h"
+#include "ios_log.h"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
@@ -76,7 +77,7 @@ void create_virtual_pad() {
 
     SDL_JoystickSetVirtualAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT, -32768);
     SDL_JoystickSetVirtualAxis(g_pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
-    NSLog(@"[DK64 iOS] Virtual gamepad attached");
+    DK64_LOG("TOUCH virtual gamepad attached (instance %d)", (int)SDL_JoystickInstanceID(g_pad));
 }
 
 void destroy_virtual_pad() {
@@ -92,7 +93,7 @@ void destroy_virtual_pad() {
             break;
         }
     }
-    NSLog(@"[DK64 iOS] Virtual gamepad detached");
+    DK64_LOG("TOUCH virtual gamepad detached");
 }
 
 void set_button(int button, bool down) {
@@ -272,7 +273,37 @@ static NSString* DK64ActionLabel(DK64Action action) {
     CGRect textFrame = CGRectMake(0, (h - fontSize * 1.2) / 2, w, fontSize * 1.3);
     BOOL darkLabel = (action == DK64ActionCUp || action == DK64ActionCDown || action == DK64ActionCLeft || action == DK64ActionCRight);
     UIColor* textShadow = darkLabel ? DK64RGB(1.0, 0.95, 0.6, 0.6) : outlineColor;
-    [container addSublayer:DK64MakeText(DK64ActionLabel(action), fontSize, labelColor, textFrame, textShadow)];
+    if (darkLabel) {
+        // Draw the arrow as a vector triangle. The text glyphs U+25B6/U+25C0 render as colour emoji on iOS,
+        // which made left/right look different from up/down.
+        CGFloat t = std::min(w, h) * 0.30;
+        CGPoint c = CGPointMake(w / 2, h / 2);
+        UIBezierPath* tri = [UIBezierPath bezierPath];
+        switch (action) {
+        case DK64ActionCUp:
+            [tri moveToPoint:CGPointMake(c.x, c.y - t)]; [tri addLineToPoint:CGPointMake(c.x + t, c.y + t * 0.8)]; [tri addLineToPoint:CGPointMake(c.x - t, c.y + t * 0.8)]; break;
+        case DK64ActionCDown:
+            [tri moveToPoint:CGPointMake(c.x, c.y + t)]; [tri addLineToPoint:CGPointMake(c.x + t, c.y - t * 0.8)]; [tri addLineToPoint:CGPointMake(c.x - t, c.y - t * 0.8)]; break;
+        case DK64ActionCLeft:
+            [tri moveToPoint:CGPointMake(c.x - t, c.y)]; [tri addLineToPoint:CGPointMake(c.x + t * 0.8, c.y - t)]; [tri addLineToPoint:CGPointMake(c.x + t * 0.8, c.y + t)]; break;
+        default:
+            [tri moveToPoint:CGPointMake(c.x + t, c.y)]; [tri addLineToPoint:CGPointMake(c.x - t * 0.8, c.y - t)]; [tri addLineToPoint:CGPointMake(c.x - t * 0.8, c.y + t)]; break;
+        }
+        [tri closePath];
+        CAShapeLayer* arrow = [CAShapeLayer layer];
+        arrow.path = tri.CGPath;
+        arrow.fillColor = labelColor.CGColor;
+        arrow.strokeColor = labelColor.CGColor;
+        arrow.lineJoin = kCALineJoinRound;
+        arrow.lineWidth = 3.0;
+        arrow.shadowColor = DK64RGB(1.0, 0.95, 0.6).CGColor;
+        arrow.shadowOpacity = 0.6;
+        arrow.shadowRadius = 0;
+        arrow.shadowOffset = CGSizeMake(0, 1.5);
+        [container addSublayer:arrow];
+    } else {
+        [container addSublayer:DK64MakeText(DK64ActionLabel(action), fontSize, labelColor, textFrame, textShadow)];
+    }
 
     [self.layer addSublayer:container];
     control.container = container;
@@ -432,6 +463,15 @@ static NSString* DK64ActionLabel(DK64Action action) {
         }
     }
 
+    {
+        static unsigned last_mask = 0;
+        unsigned mask = (a << 0) | (b << 1) | (z << 2) | (l << 3) | (r << 4) | (start << 5) | (menu << 6) | (cUp << 7) | (cDown << 8) | (cLeft << 9) | (cRight << 10);
+        if (mask != last_mask) {
+            DK64_LOG("TOUCH buttons: A=%d B=%d Z=%d L=%d R=%d START=%d MENU=%d C(up/down/left/right)=%d%d%d%d stick=(%.2f,%.2f)", a, b, z, l, r, start, menu,
+                     cUp, cDown, cLeft, cRight, _stickVector.x, _stickVector.y);
+            last_mask = mask;
+        }
+    }
     set_button(SDL_CONTROLLER_BUTTON_A, a);
     set_button(SDL_CONTROLLER_BUTTON_X, b);                 // N64 B = west button (DK64 default binding; EAST is C-Right)
     set_button(SDL_CONTROLLER_BUTTON_RIGHTSTICK, l);        // N64 L = R3 (DK64 default binding; LEFTSHOULDER is C-Down)
@@ -599,8 +639,8 @@ static void create_overlay_window() {
     window.hidden = YES;
     g_overlay_window = window;
     g_overlay = overlay;
-    NSLog(@"[DK64 iOS] Touch overlay window created: frame=%@ scale=%.1f scene=%@",
-          NSStringFromCGRect(window.frame), UIScreen.mainScreen.scale, scene);
+    DK64_LOG("TOUCH overlay window created: frame=%s scale=%.1f scene=%s sdlWindow=%p", NSStringFromCGRect(window.frame).UTF8String,
+             UIScreen.mainScreen.scale, scene.description.UTF8String, (__bridge void*)sdlUIWindow);
 }
 
 // Single place that decides whether the on-screen gamepad is active:
@@ -610,6 +650,15 @@ static void refresh_overlay_state() {
         return;
     }
     BOOL active = user_wants_touch_controls() && !physical_controller_connected();
+    {
+        static int last_active = -1, last_suspended = -1;
+        if (last_active != (int)active || last_suspended != (int)g_suspended) {
+            DK64_LOG("TOUCH overlay state: userWants=%d physicalController=%d active=%d suspended=%d", (int)user_wants_touch_controls(),
+                     (int)physical_controller_connected(), (int)active, (int)g_suspended);
+            last_active = active;
+            last_suspended = g_suspended;
+        }
+    }
 
     if (active) {
         create_overlay_window();

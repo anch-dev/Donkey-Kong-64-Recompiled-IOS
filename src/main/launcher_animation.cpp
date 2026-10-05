@@ -1,4 +1,7 @@
 #include "donk_launcher.h"
+#if defined(DK64_IOS)
+#include "ios_log.h"
+#endif
 #include <atomic>
 #include <cstdio> 
 
@@ -383,6 +386,19 @@ void dk64::launcher_animation_update(recompui::LauncherMenu *menu) {
     update_animated_svg(launcher_context.logo_d_svg, delta_time, bg_width, bg_height);
     update_animated_svg(launcher_context.logo_recomp_svg, delta_time, bg_width, bg_height);
     launcher_context.water->set_top(bg_height - 70);
+#if defined(DK64_IOS)
+    {
+        static float last_w = -1.0f, last_h = -1.0f, last_ratio = -1.0f;
+        static int last_second = -1;
+        int second = (int)launcher_context.seconds;
+        if (bg_width != last_w || bg_height != last_h || dp_to_pixel_ratio != last_ratio || (second != last_second && second <= 12)) {
+            DK64_LOG("LAUNCHER layout: bg=%.1fx%.1f dp (client %.0fx%.0f px, dp->px ratio %.3f) t=%.2fs skipped=%d", bg_width, bg_height,
+                     (double)background_container->get_client_width(), (double)background_container->get_client_height(), dp_to_pixel_ratio,
+                     launcher_context.seconds, (int)launcher_context.animation_skipped);
+            last_w = bg_width; last_h = bg_height; last_ratio = dp_to_pixel_ratio; last_second = second;
+        }
+    }
+#endif
 
     launcher_context.bg_svg.svg->set_top(0);
     launcher_context.bg_svg.svg->set_width(100, recompui::Unit::Percent);

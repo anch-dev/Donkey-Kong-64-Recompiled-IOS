@@ -1,4 +1,5 @@
 #include "ios_platform.h"
+#include "ios_log.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
@@ -44,11 +45,16 @@ extern "C" void dk64_ios_import_rom_from_documents(void) {
     NSURL* appData = [appSupport URLByAppendingPathComponent:@"DK64Recompiled" isDirectory:YES];
     if (![fm createDirectoryAtURL:appData withIntermediateDirectories:YES attributes:nil error:&error]) return;
     NSURL* destination = [appData URLByAppendingPathComponent:@"DK64.z64"];
-    if ([fm fileExistsAtPath:destination.path]) return;
+    if ([fm fileExistsAtPath:destination.path]) {
+        DK64_LOG("ROM import: %s already exists, skipping Documents scan", destination.path.UTF8String);
+        return;
+    }
+    DK64_LOG("ROM import: scanning Documents (%lu files) for .z64/.v64/.n64", (unsigned long)files.count);
 
     for (NSURL* source in files) {
         NSString* ext = source.pathExtension.lowercaseString;
         if (![ext isEqualToString:@"z64"] && ![ext isEqualToString:@"v64"] && ![ext isEqualToString:@"n64"]) continue;
+        DK64_LOG("ROM import: candidate %s", source.lastPathComponent.UTF8String);
 
         NSNumber* regular = nil;
         NSNumber* size = nil;
@@ -79,9 +85,9 @@ extern "C" void dk64_ios_import_rom_from_documents(void) {
         }
 
         if (![normalized writeToURL:destination options:NSDataWritingAtomic error:&error]) {
-            NSLog(@"[DK64 iOS] Failed to import ROM %@: %@", source.lastPathComponent, error);
+            DK64_LOG("ROM import FAILED for %s: %s", source.lastPathComponent.UTF8String, error.description.UTF8String);
         } else {
-            NSLog(@"[DK64 iOS] Imported ROM %@ as DK64.z64", source.lastPathComponent);
+            DK64_LOG("ROM imported from Documents: %s -> %s (ext=%s)", source.lastPathComponent.UTF8String, destination.path.UTF8String, ext.UTF8String);
         }
         return;
     }
@@ -106,8 +112,9 @@ extern "C" void dk64_ios_prepare_filesystem(void) {
         return;
     }
 
+    DK64_LOG("FS: app data directory = %s", dk64Directory.UTF8String);
     if (chdir(dk64Directory.fileSystemRepresentation) != 0) {
-        NSLog(@"[DK64 iOS] Failed to set working directory to app data directory");
+        DK64_LOG("FS: chdir to %s FAILED", dk64Directory.UTF8String);
     }
 }
 

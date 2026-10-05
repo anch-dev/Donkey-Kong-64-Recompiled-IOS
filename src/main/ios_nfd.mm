@@ -3,6 +3,7 @@
 // The picker runs in "import" mode, so iOS hands us a temporary copy of the chosen file.
 #include "nfd.h"
 #include "ios_touch_controls.h"
+#include "ios_log.h"
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -17,10 +18,16 @@
 
 @implementation DK64PickerDelegate
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    for (NSURL *url in urls) {
+        NSNumber *size = nil;
+        [url getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
+        DK64_LOG("PICKER delegate: picked %s (%llu bytes)", url.path.UTF8String, size.unsignedLongLongValue);
+    }
     self.urls = urls;
     self.done = YES;
 }
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
+    DK64_LOG("PICKER delegate: cancelled by user");
     self.urls = nil;
     self.done = YES;
 }
@@ -100,8 +107,13 @@ static NSArray<NSURL *> *dk64PickDocuments(BOOL multiple) {
     }
 
     UIWindow *sdlWindow = (__bridge UIWindow *)dk64_ios_ui_window();
+    DK64_LOG("PICKER requested (multiple=%d) sdlWindow=%p scene=%s", (int)multiple, (__bridge void *)sdlWindow, sdlWindow.windowScene.description.UTF8String);
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        DK64_LOG("PICKER   scene %s state=%ld", scene.description.UTF8String, (long)scene.activationState);
+    }
     UIWindow *host = dk64MakePickerWindow(sdlWindow);
     g_picker_window = host;
+    DK64_LOG("PICKER host window created: %p key=%d hidden=%d level=%.0f", (__bridge void *)host, (int)host.isKeyWindow, (int)host.hidden, host.windowLevel);
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -117,7 +129,8 @@ static NSArray<NSURL *> *dk64PickDocuments(BOOL multiple) {
     dk64_ios_touch_controls_set_suspended(1);
 
     __block BOOL shown = NO;
-    [host.rootViewController presentViewController:picker animated:YES completion:^{ shown = YES; }];
+    [host.rootViewController presentViewController:picker animated:YES completion:^{ shown = YES; DK64_LOG("PICKER presented on screen"); }];
+    DK64_LOG("PICKER present called; waiting for user");
 
     // Called on the main thread: keep servicing the run loop until the picker finishes.
     NSDate *start = [NSDate date];
@@ -125,7 +138,7 @@ static NSArray<NSURL *> *dk64PickDocuments(BOOL multiple) {
     while (!delegate.done) {
         CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, false);
         if (!shown && -[start timeIntervalSinceNow] > 8.0) {
-            NSLog(@"[DK64 iOS] File picker never appeared; giving up");
+            DK64_LOG("PICKER never appeared within 8s; using Documents fallback if available");
             failed = YES;
             break;
         }
@@ -137,6 +150,7 @@ static NSArray<NSURL *> *dk64PickDocuments(BOOL multiple) {
     if (picker.presentingViewController != nil) {
         [picker dismissViewControllerAnimated:NO completion:nil];
     }
+    DK64_LOG("PICKER finished: done=%d shown=%d failed=%d urls=%lu", (int)delegate.done, (int)shown, (int)failed, (unsigned long)delegate.urls.count);
     host.hidden = YES;
     g_picker_window = nil;
     if (sdlWindow != nil) {
@@ -150,7 +164,7 @@ static NSArray<NSURL *> *dk64PickDocuments(BOOL multiple) {
     if (failed) {
         NSURL *fallback = dk64FindRomInDocuments();
         if (fallback != nil) {
-            NSLog(@"[DK64 iOS] Using ROM from Documents: %@", fallback.lastPathComponent);
+            DK64_LOG("PICKER fallback ROM: %s", fallback.path.UTF8String);
             return @[ fallback ];
         }
     }

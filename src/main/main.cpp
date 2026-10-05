@@ -18,6 +18,7 @@
 #else
 #include "ios_platform.h"
 #include "ios_touch_controls.h"
+#include "ios_log.h"
 #endif
 
 #include "ultramodern/ultra64.h"
@@ -281,6 +282,8 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     dk64_ios_fix_metal_layer_scale(ui_window, metal_layer);
 
     // Install the touch overlay (own UIWindow above the SDL window) once the Metal view exists.
+    dk64_ios_log_window_info(window);
+    dk64_ios_log_install_event_watch();
     dk64_ios_touch_controls_init(window);
     dk64_ios_touch_controls_set_visible(1);
 
@@ -723,6 +726,10 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
+#if defined(DK64_IOS)
+    dk64_ios_log_init();
+    DK64_LOG("main() entered");
+#endif
     recomp::Version project_version{};
     if (!recomp::Version::from_string(version_string, project_version)) {
         ultramodern::error_handling::message_box(("Invalid version string: " + version_string).c_str());
