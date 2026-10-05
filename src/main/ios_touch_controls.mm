@@ -57,7 +57,7 @@ void create_virtual_pad() {
             ",DK64 Touch Controls,"
             "a:b0,b:b1,x:b2,y:b3,back:b4,guide:b5,start:b6,leftstick:b7,rightstick:b8,"
             "leftshoulder:b9,rightshoulder:b10,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,"
-            "leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,platform:iOS,";
+            "leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,";
         SDL_GameControllerAddMapping(mapping.c_str());
         g_mapping_added = true;
         SDL_JoystickDetachVirtual(index);

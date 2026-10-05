@@ -150,9 +150,6 @@ extern "C" void dk64_ios_log_init(void) {
 
     SDL_LogSetAllPriority(SDL_LOG_PRIORITY_VERBOSE);
     SDL_LogSetOutputFunction(sdl_log_output, nullptr);
-#ifdef SDL_HINT_EVENT_LOGGING
-    SDL_SetHint(SDL_HINT_EVENT_LOGGING, "1");
-#endif
 
     size_t size = 0;
     sysctlbyname("hw.machine", nullptr, &size, nullptr, 0);

@@ -729,6 +729,9 @@ int main(int argc, char** argv) {
 #if defined(DK64_IOS)
     dk64_ios_log_init();
     DK64_LOG("main() entered");
+    // SDL exposes the phone's accelerometer as a joystick ("controller 0"). The game then treated it as a real
+    // pad (log: "Couldn't find mapping for device (0)"). Only the on-screen / physical pads should count.
+    SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
 #endif
     recomp::Version project_version{};
     if (!recomp::Version::from_string(version_string, project_version)) {
