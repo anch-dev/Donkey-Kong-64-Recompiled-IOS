@@ -127,19 +127,42 @@ typedef NS_ENUM(NSInteger, DK64Action) {
 @interface DK64Control : NSObject
 @property (nonatomic, assign) DK64Action action;
 @property (nonatomic, assign) CGRect frame;
+// `pressed` is the logical state: what the game sees AND what is drawn. It follows the fingers but is held for at least
+// kMinHoldSeconds so a very short tap cannot fall between two input polls of the game.
 @property (nonatomic, assign) BOOL pressed;
+@property (nonatomic, assign) NSInteger touchCount;     // fingers currently on this control
+@property (nonatomic, assign) NSUInteger generation;    // invalidates a pending delayed release
+@property (nonatomic, assign) CFTimeInterval pressedAt;
 @property (nonatomic, strong) CALayer* container;
+@property (nonatomic, strong) CAGradientLayer* gradient;
+@property (nonatomic, strong) CAShapeLayer* shade;       // dark overlay shown while pressed
+@property (nonatomic, strong) CAShapeLayer* outline;
+@property (nonatomic, strong) CALayer* gloss;            // top highlight, hidden while pressed
 @end
 
 @implementation DK64Control
 @end
+
+// One record per active UITouch: what that finger is currently driving.
+@interface DK64TouchRecord : NSObject
+@property (nonatomic, strong) DK64Control* control;  // nil = not on a control right now (or driving the stick)
+@property (nonatomic, assign) BOOL isStick;
+@end
+
+@implementation DK64TouchRecord
+@end
+
+static const CFTimeInterval kMinHoldSeconds = 0.075;  // a bit over two 30 Hz game frames
+static const CGFloat kHitSlop = 8.0;                  // forgiving press area around a button
+static const CGFloat kHoldSlop = 26.0;                // a finger may drift this far before it leaves its button
 
 @interface DK64TouchOverlayView : UIView
 @end
 
 @implementation DK64TouchOverlayView {
     NSMutableArray<DK64Control*>* _controls;
-    NSMutableDictionary<NSValue*, id>* _assignments;
+    NSMapTable<UITouch*, DK64TouchRecord*>* _records;
+    UITouch* _stickTouch;
     CGPoint _stickCenter;
     CGFloat _stickRadius;
     CAShapeLayer* _stickBase;
@@ -154,7 +177,8 @@ typedef NS_ENUM(NSInteger, DK64Action) {
         self.multipleTouchEnabled = YES;
         self.opaque = NO;
         _controls = [NSMutableArray array];
-        _assignments = [NSMutableDictionary dictionary];
+        _records = [NSMapTable strongToStrongObjectsMapTable];
+        self.exclusiveTouch = NO;
         _stickVector = CGPointZero;
     }
     return self;
@@ -256,6 +280,12 @@ static NSString* DK64ActionLabel(DK64Action action) {
     gradient.mask = mask;
     [container addSublayer:gradient];
 
+    CAShapeLayer* shade = [CAShapeLayer layer];
+    shade.path = path.CGPath;
+    shade.fillColor = [UIColor colorWithWhite:0.0 alpha:0.32].CGColor;
+    shade.opacity = 0.0;
+    [container addSublayer:shade];
+
     CAShapeLayer* outline = [CAShapeLayer layer];
     outline.path = path.CGPath;
     outline.fillColor = nil;
@@ -307,6 +337,10 @@ static NSString* DK64ActionLabel(DK64Action action) {
 
     [self.layer addSublayer:container];
     control.container = container;
+    control.gradient = gradient;
+    control.shade = shade;
+    control.outline = outline;
+    control.gloss = gloss;
     [_controls addObject:control];
 }
 
@@ -396,20 +430,52 @@ static NSString* DK64ActionLabel(DK64Action action) {
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     for (DK64Control* control in _controls) {
-        control.container.opacity = control.pressed ? 1.0 : 0.80;
-        control.container.transform = control.pressed ? CATransform3DMakeScale(0.92, 0.92, 1.0) : CATransform3DIdentity;
+        CALayer* c = control.container;
+        if (control.pressed) {
+            // Physically pushed in: shifted down, slightly smaller, shaded, highlight gone, lit from below, shadow collapsed.
+            c.transform = CATransform3DConcat(CATransform3DMakeScale(0.94, 0.94, 1.0), CATransform3DMakeTranslation(0, 3.0, 0));
+            c.opacity = 1.0;
+            c.shadowOpacity = 0.15;
+            c.shadowRadius = 1.0;
+            c.shadowOffset = CGSizeMake(0, 0.5);
+            control.shade.opacity = 1.0;
+            control.gloss.opacity = 0.0;
+            control.gradient.startPoint = CGPointMake(0.5, 1.0);
+            control.gradient.endPoint = CGPointMake(0.5, 0.0);
+            control.outline.lineWidth = 4.5;
+        } else {
+            c.transform = CATransform3DIdentity;
+            c.opacity = 0.80;
+            c.shadowOpacity = 0.5;
+            c.shadowRadius = 3.0;
+            c.shadowOffset = CGSizeMake(0, 2.0);
+            control.shade.opacity = 0.0;
+            control.gloss.opacity = 1.0;
+            control.gradient.startPoint = CGPointMake(0.5, 0.0);
+            control.gradient.endPoint = CGPointMake(0.5, 1.0);
+            control.outline.lineWidth = 3.5;
+        }
     }
     _stickThumb.position = CGPointMake(_stickCenter.x + _stickVector.x * _stickRadius, _stickCenter.y + _stickVector.y * _stickRadius);
     [CATransaction commit];
 }
 
-- (DK64Control*)controlAtPoint:(CGPoint)point {
+// Nearest control (by centre) whose slop-expanded rect contains the point, so overlapping hit areas never steal from the
+// button the finger is actually closest to.
+- (DK64Control*)controlAtPoint:(CGPoint)point slop:(CGFloat)slop {
+    DK64Control* best = nil;
+    CGFloat bestDistance = CGFLOAT_MAX;
     for (DK64Control* control in _controls) {
-        if (CGRectContainsPoint(CGRectInset(control.frame, -8, -8), point)) {
-            return control;
+        if (!CGRectContainsPoint(CGRectInset(control.frame, -slop, -slop), point)) continue;
+        CGFloat dx = point.x - CGRectGetMidX(control.frame);
+        CGFloat dy = point.y - CGRectGetMidY(control.frame);
+        CGFloat distance = dx * dx + dy * dy;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = control;
         }
     }
-    return nil;
+    return best;
 }
 
 - (BOOL)pointInStickZone:(CGPoint)point {
@@ -425,7 +491,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
     }
     // Only claim touches that land on a virtual control or the stick zone. Everything else returns
     // nil so UIKit passes the touch on to the SDL window below (SDL turns it into mouse input).
-    if ([self controlAtPoint:point] != nil || [self pointInStickZone:point]) {
+    if ([self controlAtPoint:point slop:kHitSlop] != nil || [self pointInStickZone:point]) {
         return self;
     }
     return nil;
@@ -486,65 +552,113 @@ static NSString* DK64ActionLabel(DK64Action action) {
     [self refreshVisuals];
 }
 
+- (void)pressControl:(DK64Control*)control {
+    control.generation++;  // cancels any delayed release still pending from a previous tap
+    control.touchCount++;
+    if (!control.pressed) {
+        control.pressed = YES;
+        control.pressedAt = CACurrentMediaTime();
+    }
+}
+
+// Called when one finger leaves a control. The control is released only when its last finger is gone, and never before it
+// has been down for kMinHoldSeconds (unless the touch was cancelled).
+- (void)releaseControl:(DK64Control*)control immediately:(BOOL)immediately {
+    if (control.touchCount > 0) control.touchCount--;
+    if (control.touchCount > 0) return;
+    CFTimeInterval remaining = kMinHoldSeconds - (CACurrentMediaTime() - control.pressedAt);
+    if (immediately || remaining <= 0.0) {
+        control.generation++;
+        control.pressed = NO;
+        return;
+    }
+    NSUInteger generation = ++control.generation;
+    __weak DK64TouchOverlayView* weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(remaining * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        DK64TouchOverlayView* strongSelf = weakSelf;
+        if (strongSelf == nil || control.generation != generation || control.touchCount > 0) return;
+        control.pressed = NO;
+        [strongSelf applyState];
+    });
+}
+
 - (void)touchesBegan:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
     for (UITouch* touch in touches) {
         CGPoint p = [touch locationInView:self];
-        NSValue* key = [NSValue valueWithNonretainedObject:touch];
-        DK64Control* control = [self controlAtPoint:p];
+        DK64TouchRecord* record = [[DK64TouchRecord alloc] init];
+        DK64Control* control = [self controlAtPoint:p slop:kHitSlop];
         if (control != nil) {
-            control.pressed = YES;
-            _assignments[key] = control;
-        } else if ([self pointInStickZone:p]) {
-            _assignments[key] = @"stick";
+            record.control = control;
+            [self pressControl:control];
+        } else if (_stickTouch == nil && [self pointInStickZone:p]) {
+            record.isStick = YES;  // only one finger may own the stick
+            _stickTouch = touch;
             [self updateStickWithTouch:touch];
+        } else {
+            continue;  // claimed by hit-testing but nothing to drive (e.g. a second finger in the stick zone)
         }
+        [_records setObject:record forKey:touch];
     }
     [self applyState];
 }
 
 - (void)touchesMoved:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
     for (UITouch* touch in touches) {
-        id assigned = _assignments[[NSValue valueWithNonretainedObject:touch]];
-        if ([assigned isKindOfClass:[NSString class]]) {
-            NSString* kind = (NSString*)assigned;
-            if ([kind isEqualToString:@"stick"]) {
-                [self updateStickWithTouch:touch];
+        DK64TouchRecord* record = [_records objectForKey:touch];
+        if (record == nil) continue;
+        CGPoint p = [touch locationInView:self];
+        if (record.isStick) {
+            [self updateStickWithTouch:touch];
+            continue;
+        }
+        // Sliding between buttons: leave the current one once the finger drifts well outside it, and press whichever
+        // button it moves onto. Other fingers are never affected.
+        if (record.control != nil && !CGRectContainsPoint(CGRectInset(record.control.frame, -kHoldSlop, -kHoldSlop), p)) {
+            [self releaseControl:record.control immediately:NO];
+            record.control = nil;
+        }
+        if (record.control == nil) {
+            DK64Control* entered = [self controlAtPoint:p slop:kHitSlop];
+            if (entered != nil) {
+                record.control = entered;
+                [self pressControl:entered];
             }
         }
     }
     [self applyState];
 }
 
-- (void)releaseTouches:(NSSet<UITouch*>*)touches {
+- (void)endTouches:(NSSet<UITouch*>*)touches cancelled:(BOOL)cancelled {
     for (UITouch* touch in touches) {
-        NSValue* key = [NSValue valueWithNonretainedObject:touch];
-        id assigned = _assignments[key];
-        if ([assigned isKindOfClass:[DK64Control class]]) {
-            ((DK64Control*)assigned).pressed = NO;
-        } else if ([assigned isKindOfClass:[NSString class]]) {
-            NSString* kind = (NSString*)assigned;
-            if ([kind isEqualToString:@"stick"]) {
-                _stickVector = CGPointZero;
-            }
+        DK64TouchRecord* record = [_records objectForKey:touch];
+        if (record == nil) continue;
+        if (record.isStick) {
+            _stickTouch = nil;
+            _stickVector = CGPointZero;
+        } else if (record.control != nil) {
+            [self releaseControl:record.control immediately:cancelled];
         }
-        [_assignments removeObjectForKey:key];
+        [_records removeObjectForKey:touch];
     }
     [self applyState];
 }
 
 - (void)touchesEnded:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
-    [self releaseTouches:touches];
+    [self endTouches:touches cancelled:NO];
 }
 
 - (void)touchesCancelled:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
-    [self releaseTouches:touches];
+    [self endTouches:touches cancelled:YES];
 }
 
 - (void)resetAll {
     for (DK64Control* control in _controls) {
+        control.generation++;
+        control.touchCount = 0;
         control.pressed = NO;
     }
-    [_assignments removeAllObjects];
+    [_records removeAllObjects];
+    _stickTouch = nil;
     _stickVector = CGPointZero;
     [self applyState];
 }

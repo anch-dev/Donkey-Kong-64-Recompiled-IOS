@@ -219,6 +219,50 @@ jobs:
           }
           EOF
 
+      - name: Use the asynchronous iOS ROM picker in the launcher file dialog
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/RecompFrontend/recompui/src/util/file.cpp")
+          s = p.read_text()
+          old = (
+              "#ifdef __APPLE__\n"
+              "        file::apple::dispatch_on_ui_thread([callback]() {\n"
+              "            perform_file_dialog_operation(callback);\n"
+              "        });\n"
+          )
+          if s.count(old) != 1:
+              raise SystemExit("open_file_dialog Apple block not found exactly once")
+          new = (
+              "#if defined(__APPLE__) && TARGET_OS_IPHONE\n"
+              "        // iOS: asynchronous picker. Presents from SDL's view controller and returns immediately; the completion is\n"
+              "        // called later on the main thread with a local, app-controlled copy of the ROM.\n"
+              "        auto* heap_callback = new std::function<void(bool, const std::filesystem::path&)>(callback);\n"
+              "        dk64_ios_pick_rom_async([](void* context, int success, const char* path) {\n"
+              "            auto* cb = static_cast<std::function<void(bool, const std::filesystem::path&)>*>(context);\n"
+              "            (*cb)(success != 0, success != 0 ? std::filesystem::path{path} : std::filesystem::path{});\n"
+              "            delete cb;\n"
+              "        }, heap_callback);\n"
+              "#elif defined(__APPLE__)\n"
+              "        file::apple::dispatch_on_ui_thread([callback]() {\n"
+              "            perform_file_dialog_operation(callback);\n"
+              "        });\n"
+          )
+          s = s.replace(old, new)
+          decl = (
+              "#ifdef __APPLE__\n"
+              "#include <TargetConditionals.h>\n"
+              "#if TARGET_OS_IPHONE\n"
+              "extern \"C\" void dk64_ios_pick_rom_async(void (*done)(void*, int, const char*), void* context);\n"
+              "#endif\n"
+              "#endif\n"
+          )
+          marker = "namespace recompui {"
+          idx = s.index(marker)
+          s = s[:idx] + decl + "\n" + s[idx:]
+          p.write_text(s)
+          PY
+
       - name: Make touch behave as a mouse in RmlUi menus (iOS)
         run: |
           python3 - <<'PY'

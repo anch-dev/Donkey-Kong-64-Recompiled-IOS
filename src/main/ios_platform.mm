@@ -1,5 +1,6 @@
 #include "ios_platform.h"
 #include "ios_log.h"
+#import "ios_rom_import.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
@@ -45,9 +46,20 @@ extern "C" void dk64_ios_import_rom_from_documents(void) {
     NSURL* appData = [appSupport URLByAppendingPathComponent:@"DK64Recompiled" isDirectory:YES];
     if (![fm createDirectoryAtURL:appData withIntermediateDirectories:YES attributes:nil error:&error]) return;
     NSURL* destination = [appData URLByAppendingPathComponent:@"DK64.z64"];
+
+    // Interrupted imports leave only ".import-*.tmp" files; the final ROM is only ever created by an atomic rename.
+    dk64_rom_cleanup_temp_files();
+
+    // An imported ROM is persistent: use it automatically when it is still valid.
     if ([fm fileExistsAtPath:destination.path]) {
-        DK64_LOG("ROM import: %s already exists, skipping Documents scan", destination.path.UTF8String);
-        return;
+        int order = -1;
+        DK64RomImportStatus existing = dk64_rom_check_file(destination.path, &order);
+        if (existing == DK64RomImportOK && order == 0) {
+            DK64_LOG("ROM: using stored ROM %s", destination.path.UTF8String);
+            return;
+        }
+        DK64_LOG("ROM: stored ROM is invalid (%s); it is replaced atomically if a valid ROM is found in Documents",
+                 dk64_rom_status_message(existing).UTF8String);
     }
     DK64_LOG("ROM import: scanning Documents (%lu files) for .z64/.v64/.n64", (unsigned long)files.count);
 
@@ -56,40 +68,13 @@ extern "C" void dk64_ios_import_rom_from_documents(void) {
         if (![ext isEqualToString:@"z64"] && ![ext isEqualToString:@"v64"] && ![ext isEqualToString:@"n64"]) continue;
         DK64_LOG("ROM import: candidate %s", source.lastPathComponent.UTF8String);
 
-        NSNumber* regular = nil;
-        NSNumber* size = nil;
-        [source getResourceValue:&regular forKey:NSURLIsRegularFileKey error:nil];
-        [source getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
-        if (![regular boolValue] || size.unsignedLongLongValue != 33554432ULL) continue;
-
-        NSData* input = [NSData dataWithContentsOfURL:source options:NSDataReadingMappedIfSafe error:&error];
-        if (input == nil || input.length != 33554432ULL) continue;
-
-        NSMutableData* normalized = [NSMutableData dataWithLength:input.length];
-        const uint8_t* in = static_cast<const uint8_t*>(input.bytes);
-        uint8_t* out = static_cast<uint8_t*>(normalized.mutableBytes);
-        if ([ext isEqualToString:@"z64"]) {
-            memcpy(out, in, input.length);
-        } else if ([ext isEqualToString:@"v64"]) {
-            for (NSUInteger i = 0; i < input.length; i += 2) {
-                out[i] = in[i + 1];
-                out[i + 1] = in[i];
-            }
-        } else {
-            for (NSUInteger i = 0; i < input.length; i += 4) {
-                out[i] = in[i + 3];
-                out[i + 1] = in[i + 2];
-                out[i + 2] = in[i + 1];
-                out[i + 3] = in[i];
-            }
+        NSString* detail = nil;
+        DK64RomImportStatus status = dk64_import_rom(source, destination.path, &detail);
+        if (status == DK64RomImportOK) {
+            DK64_LOG("ROM imported from Documents: %s -> %s", source.lastPathComponent.UTF8String, destination.path.UTF8String);
+            return;  // the user's original file in Documents is left untouched
         }
-
-        if (![normalized writeToURL:destination options:NSDataWritingAtomic error:&error]) {
-            DK64_LOG("ROM import FAILED for %s: %s", source.lastPathComponent.UTF8String, error.description.UTF8String);
-        } else {
-            DK64_LOG("ROM imported from Documents: %s -> %s (ext=%s)", source.lastPathComponent.UTF8String, destination.path.UTF8String, ext.UTF8String);
-        }
-        return;
+        DK64_LOG("ROM import: skipped %s (%s)", source.lastPathComponent.UTF8String, dk64_rom_status_message(status).UTF8String);
     }
 }
 
