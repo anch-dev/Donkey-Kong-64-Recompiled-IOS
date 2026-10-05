@@ -10,6 +10,10 @@ typedef NS_ENUM(NSInteger, DK64RomImportStatus) {
     DK64RomImportBadSize,       // "Unsupported ROM format" (not a 32 MB cartridge image)
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Human readable message for a status (used for alerts and logs).
 NSString *dk64_rom_status_message(DK64RomImportStatus status);
 
@@ -27,3 +31,7 @@ NSString *dk64_rom_staging_directory(void);
 
 // Removes leftover ".import-*.tmp" files from interrupted imports in the given folders.
 void dk64_rom_cleanup_temp_files(void);
+
+#ifdef __cplusplus
+}
+#endif
