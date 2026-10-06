@@ -817,7 +817,7 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
     for (auto option : game_options_menu->get_options()) {
         // Real, touch-sized buttons: >= 44 pt on a phone (the launcher UI is 1080 dp tall).
         option->set_justify_content(recompui::JustifyContent::Center);
-        option->set_height(112.0f);
+        option->set_height(96.0f);  // 6 buttons + 8 dp gaps must fit between the title and the sea strip
         option->set_border_radius(28.0f);
         option->set_border_width(4.0f);
         option->set_border_color(gold);
@@ -843,8 +843,12 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
     game_options_menu->unset_right();
     game_options_menu->set_width(620.0f);
     game_options_menu->set_left(50.0f, recompui::Unit::Percent);
-    game_options_menu->set_bottom(50.0f, recompui::Unit::Percent);
-    game_options_menu->set_translate_2D(-50.0f, 50.0f, recompui::Unit::Percent);
+    // Anchor from the top, below the title, instead of centring vertically: six 96 dp buttons with 8 dp gaps are ~616 dp.
+    // The menu container is 1080 dp tall and starts 100 dp down the screen, so 23% lands the first button at ~351 dp
+    // (just under the logo) and the last one ends near 967 dp, above the sea strip.
+    game_options_menu->unset_bottom();
+    game_options_menu->set_top(23.0f, recompui::Unit::Percent);
+    game_options_menu->set_translate_2D(-50.0f, 0.0f, recompui::Unit::Percent);
 
     menu->remove_default_title();
 
