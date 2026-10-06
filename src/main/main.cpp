@@ -302,16 +302,22 @@ void update_gfx(void*) {
     // (it owns every touch then). In menus it is hidden and SDL's touch->mouse translation drives the UI.
     dk64_ios_log_frame_tick();
     {
-        static int last_started = -1, last_capturing = -1;
-        const int started = ultramodern::is_game_started() ? 1 : 0;
-        const int capturing = recompui::is_context_capturing_input() ? 1 : 0;
-        if (started != last_started || capturing != last_capturing) {
-            DK64_LOG("STATE game_started=%d ui_capturing_input=%d", started, capturing);
-            last_started = started;
-            last_capturing = capturing;
+        // is_context_capturing_input() takes the UI state mutex, which the UI thread holds while it lays out; polling it
+        // every frame could stall this thread. Mode changes don't need frame accuracy, so check about every 4th frame.
+        static unsigned frame_counter = 0;
+        static int last_started = -1, last_capturing = -1, gameplay = 0;
+        if ((frame_counter++ & 3u) == 0) {
+            const int started = ultramodern::is_game_started() ? 1 : 0;
+            const int capturing = recompui::is_context_capturing_input() ? 1 : 0;
+            if (started != last_started || capturing != last_capturing) {
+                DK64_LOG("STATE game_started=%d ui_capturing_input=%d", started, capturing);
+                last_started = started;
+                last_capturing = capturing;
+            }
+            gameplay = (started && !capturing) ? 1 : 0;
         }
+        dk64_ios_touch_controls_set_gameplay(gameplay);
     }
-    dk64_ios_touch_controls_set_gameplay(ultramodern::is_game_started() && !recompui::is_context_capturing_input() ? 1 : 0);
     dk64_ios_touch_controls_tick();
 #endif
     recompinput::handle_events();
