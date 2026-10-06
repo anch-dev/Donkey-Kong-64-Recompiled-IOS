@@ -138,6 +138,9 @@ typedef NS_ENUM(NSInteger, DK64Action) {
 @property (nonatomic, strong) CAShapeLayer* shade;       // dark overlay shown while pressed
 @property (nonatomic, strong) CAShapeLayer* outline;
 @property (nonatomic, strong) CALayer* gloss;            // top highlight, hidden while pressed
+@property (nonatomic, strong) CAGradientLayer* innerShadow;  // dark lip along the top edge, shown while pressed
+@property (nonatomic, strong) CALayer* well;             // dark socket the button sinks into
+@property (nonatomic, assign) BOOL visualRefreshPending;
 @end
 
 @implementation DK64Control
@@ -152,7 +155,7 @@ typedef NS_ENUM(NSInteger, DK64Action) {
 @implementation DK64TouchRecord
 @end
 
-static const CFTimeInterval kMinHoldSeconds = 0.075;  // a bit over two 30 Hz game frames
+static const CFTimeInterval kMinHoldSeconds = 0.040;  // ~one 30 Hz game frame: a tap shorter than a poll can otherwise be missed. Presses are never delayed.
 static const CGFloat kHitSlop = 8.0;                  // forgiving press area around a button
 static const CGFloat kHoldSlop = 26.0;                // a finger may drift this far before it leaves its button
 
@@ -164,6 +167,8 @@ static const CGFloat kHoldSlop = 26.0;                // a finger may drift this
     NSMapTable<UITouch*, DK64TouchRecord*>* _records;
     UITouch* _stickTouch;
     CGPoint _stickCenter;
+    CGPoint _stickRestCenter;
+    CALayer* _stickRing;
     CGFloat _stickRadius;
     CAShapeLayer* _stickBase;
     CAShapeLayer* _stickThumb;
@@ -229,6 +234,23 @@ static CATextLayer* DK64MakeText(NSString* string, CGFloat fontSize, UIColor* co
     return text;
 }
 
+static const char* DK64ActionName(DK64Action action) {
+    switch (action) {
+    case DK64ActionA: return "A";
+    case DK64ActionB: return "B";
+    case DK64ActionZ: return "Z";
+    case DK64ActionL: return "L";
+    case DK64ActionR: return "R";
+    case DK64ActionStart: return "START";
+    case DK64ActionMenu: return "MENU";
+    case DK64ActionCUp: return "C-UP";
+    case DK64ActionCDown: return "C-DOWN";
+    case DK64ActionCLeft: return "C-LEFT";
+    case DK64ActionCRight: return "C-RIGHT";
+    default: return "?";
+    }
+}
+
 static NSString* DK64ActionLabel(DK64Action action) {
     switch (action) {
     case DK64ActionA: return @"A";
@@ -262,6 +284,15 @@ static NSString* DK64ActionLabel(DK64Action action) {
     CGFloat radius = round ? std::min(w, h) / 2 : h * 0.42;
     UIBezierPath* path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(local, 2, 2) cornerRadius:radius];
 
+    // The socket: always visible behind the button, so a pressed (smaller, lower) button visibly sinks into it.
+    CAShapeLayer* well = [CAShapeLayer layer];
+    well.path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(control.frame, -3, -3)
+                                           cornerRadius:round ? std::min(w, h) / 2 + 3 : h * 0.42 + 3].CGPath;
+    well.fillColor = [UIColor colorWithRed:0.08 green:0.04 blue:0.01 alpha:0.50].CGColor;
+    well.strokeColor = [UIColor colorWithWhite:0.0 alpha:0.35].CGColor;
+    well.lineWidth = 1.5;
+    [self.layer addSublayer:well];
+
     CALayer* container = [CALayer layer];
     container.frame = control.frame;
     container.opacity = 0.80;
@@ -282,9 +313,20 @@ static NSString* DK64ActionLabel(DK64Action action) {
 
     CAShapeLayer* shade = [CAShapeLayer layer];
     shade.path = path.CGPath;
-    shade.fillColor = [UIColor colorWithWhite:0.0 alpha:0.32].CGColor;
+    shade.fillColor = [UIColor colorWithWhite:0.0 alpha:0.45].CGColor;
     shade.opacity = 0.0;
     [container addSublayer:shade];
+
+    CAGradientLayer* innerShadow = [CAGradientLayer layer];
+    innerShadow.frame = local;
+    innerShadow.colors = @[ (id)[UIColor colorWithWhite:0.0 alpha:0.60].CGColor, (id)[UIColor colorWithWhite:0.0 alpha:0.0].CGColor ];
+    innerShadow.startPoint = CGPointMake(0.5, 0.0);
+    innerShadow.endPoint = CGPointMake(0.5, 0.55);
+    CAShapeLayer* innerMask = [CAShapeLayer layer];
+    innerMask.path = path.CGPath;
+    innerShadow.mask = innerMask;
+    innerShadow.opacity = 0.0;
+    [container addSublayer:innerShadow];
 
     CAShapeLayer* outline = [CAShapeLayer layer];
     outline.path = path.CGPath;
@@ -341,16 +383,36 @@ static NSString* DK64ActionLabel(DK64Action action) {
     control.shade = shade;
     control.outline = outline;
     control.gloss = gloss;
+    control.innerShadow = innerShadow;
+    control.well = well;
     [_controls addObject:control];
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
+    {
+        static CGSize lastSize = CGSizeZero;
+        if (!CGSizeEqualToSize(lastSize, self.bounds.size)) {
+            if (lastSize.width > 0) [self resetAll];  // never carry a held control across a rotation
+            lastSize = self.bounds.size;
+        }
+    }
 
+    {
+        static CGSize builtSize = CGSizeZero;
+        static UIEdgeInsets builtInsets = UIEdgeInsetsZero;
+        if (_controls.count > 0 && CGSizeEqualToSize(builtSize, self.bounds.size) && UIEdgeInsetsEqualToEdgeInsets(builtInsets, self.safeAreaInsets)) {
+            return;  // nothing changed: rebuilding would recreate every control and drop any held press
+        }
+        builtSize = self.bounds.size;
+        builtInsets = self.safeAreaInsets;
+    }
     for (CALayer* layer in [self.layer.sublayers copy]) {
         [layer removeFromSuperlayer];
     }
     [_controls removeAllObjects];
+    [_records removeAllObjects];
+    _stickTouch = nil;
 
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
@@ -364,6 +426,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
     // Left analog stick.
     _stickRadius = 62 * u;
     _stickCenter = CGPointMake(left + 72 * u, bottom - 78 * u);
+    _stickRestCenter = _stickCenter;
     UIColor* outlineColor = DK64RGB(0.20, 0.10, 0.03);
     _stickBase = [CAShapeLayer layer];
     _stickBase.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(_stickCenter.x - _stickRadius, _stickCenter.y - _stickRadius,
@@ -378,6 +441,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
     [self.layer addSublayer:_stickBase];
 
     CAShapeLayer* innerRing = [CAShapeLayer layer];
+    _stickRing = innerRing;
     innerRing.path = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(_stickCenter.x - _stickRadius * 0.62, _stickCenter.y - _stickRadius * 0.62,
                                                                       _stickRadius * 1.24, _stickRadius * 1.24)].CGPath;
     innerRing.fillColor = nil;
@@ -427,22 +491,35 @@ static NSString* DK64ActionLabel(DK64Action action) {
 }
 
 - (void)refreshVisuals {
+    static const CFTimeInterval kMinVisualSeconds = 0.11;  // visual only: input state is never held back by this
+    CFTimeInterval now = CACurrentMediaTime();
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     for (DK64Control* control in _controls) {
+        CFTimeInterval visualRemaining = control.pressedAt + kMinVisualSeconds - now;
+        BOOL showPressed = control.pressed || visualRemaining > 0.0;
+        if (!control.pressed && visualRemaining > 0.0 && !control.visualRefreshPending) {
+            // A tap shorter than ~7 frames would flash by unseen; keep drawing it pressed until the minimum has passed.
+            control.visualRefreshPending = YES;
+            __weak DK64TouchOverlayView* weakSelf = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((visualRemaining + 0.005) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                control.visualRefreshPending = NO;
+                [weakSelf refreshVisuals];
+            });
+        }
         CALayer* c = control.container;
-        if (control.pressed) {
-            // Physically pushed in: shifted down, slightly smaller, shaded, highlight gone, lit from below, shadow collapsed.
-            c.transform = CATransform3DConcat(CATransform3DMakeScale(0.94, 0.94, 1.0), CATransform3DMakeTranslation(0, 3.0, 0));
-            c.opacity = 1.0;
-            c.shadowOpacity = 0.15;
-            c.shadowRadius = 1.0;
-            c.shadowOffset = CGSizeMake(0, 0.5);
+        if (showPressed) {
+            // Pushed into its socket: clearly smaller and lower, darker, top lip shadowed, highlight gone, outer shadow gone.
+            c.transform = CATransform3DConcat(CATransform3DMakeScale(0.86, 0.86, 1.0), CATransform3DMakeTranslation(0, 4.0, 0));
+            c.opacity = 0.92;
+            c.shadowOpacity = 0.0;
             control.shade.opacity = 1.0;
+            control.innerShadow.opacity = 1.0;
             control.gloss.opacity = 0.0;
             control.gradient.startPoint = CGPointMake(0.5, 1.0);
             control.gradient.endPoint = CGPointMake(0.5, 0.0);
-            control.outline.lineWidth = 4.5;
+            control.outline.lineWidth = 5.0;
+            control.well.opacity = 1.0;
         } else {
             c.transform = CATransform3DIdentity;
             c.opacity = 0.80;
@@ -450,18 +527,18 @@ static NSString* DK64ActionLabel(DK64Action action) {
             c.shadowRadius = 3.0;
             c.shadowOffset = CGSizeMake(0, 2.0);
             control.shade.opacity = 0.0;
+            control.innerShadow.opacity = 0.0;
             control.gloss.opacity = 1.0;
             control.gradient.startPoint = CGPointMake(0.5, 0.0);
             control.gradient.endPoint = CGPointMake(0.5, 1.0);
             control.outline.lineWidth = 3.5;
+            control.well.opacity = 0.7;
         }
     }
     _stickThumb.position = CGPointMake(_stickCenter.x + _stickVector.x * _stickRadius, _stickCenter.y + _stickVector.y * _stickRadius);
     [CATransaction commit];
 }
 
-// Nearest control (by centre) whose slop-expanded rect contains the point, so overlapping hit areas never steal from the
-// button the finger is actually closest to.
 - (DK64Control*)controlAtPoint:(CGPoint)point slop:(CGFloat)slop {
     DK64Control* best = nil;
     CGFloat bestDistance = CGFLOAT_MAX;
@@ -489,12 +566,10 @@ static NSString* DK64ActionLabel(DK64Action action) {
     if (self.hidden || self.alpha < 0.01) {
         return nil;
     }
-    // Only claim touches that land on a virtual control or the stick zone. Everything else returns
-    // nil so UIKit passes the touch on to the SDL window below (SDL turns it into mouse input).
-    if ([self controlAtPoint:point slop:kHitSlop] != nil || [self pointInStickZone:point]) {
-        return self;
-    }
-    return nil;
+    // The overlay window is only shown during gameplay (see dk64_ios_touch_controls_set_gameplay), so it owns every
+    // touch while visible: a thumb that lands slightly off a button still drives the controller instead of becoming a
+    // stray mouse click. In menus the whole window is hidden and SDL receives touches directly.
+    return self;
 }
 
 - (void)updateStickWithTouch:(UITouch*)touch {
@@ -505,8 +580,30 @@ static NSString* DK64ActionLabel(DK64Action action) {
     if (length > 1.0) {
         dx /= length;
         dy /= length;
+        length = 1.0;
+    }
+    // Small radial dead zone (rescaled so full deflection is still reachable) to avoid jitter around the centre.
+    const CGFloat kDeadZone = 0.10;
+    if (length < kDeadZone) {
+        dx = dy = 0.0;
+    } else {
+        CGFloat scale = (length - kDeadZone) / (1.0 - kDeadZone) / length;
+        dx *= scale;
+        dy *= scale;
     }
     _stickVector = CGPointMake(dx, dy);
+}
+
+// Floating stick: the stick base re-centres under the finger that starts it, then returns when it lifts.
+- (void)moveStickBaseTo:(CGPoint)center {
+    _stickCenter = center;
+    CGPoint delta = CGPointMake(center.x - _stickRestCenter.x, center.y - _stickRestCenter.y);
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    CATransform3D t = CATransform3DMakeTranslation(delta.x, delta.y, 0);
+    _stickBase.transform = t;
+    _stickRing.transform = t;
+    [CATransaction commit];
 }
 
 - (void)applyState {
@@ -590,14 +687,26 @@ static NSString* DK64ActionLabel(DK64Action action) {
         if (control != nil) {
             record.control = control;
             [self pressControl:control];
-        } else if (_stickTouch == nil && [self pointInStickZone:p]) {
+        } else if (_stickTouch == nil && (p.x < self.bounds.size.width * 0.5 || [self pointInStickZone:p])) {
             record.isStick = YES;  // only one finger may own the stick
             _stickTouch = touch;
+            if (![self pointInStickZone:p]) {
+                CGFloat m = _stickRadius;
+                [self moveStickBaseTo:CGPointMake(std::max(m, std::min(self.bounds.size.width - m, p.x)),
+                                                  std::max(m, std::min(self.bounds.size.height - m, p.y)))];
+            }
             [self updateStickWithTouch:touch];
         } else {
-            continue;  // claimed by hit-testing but nothing to drive (e.g. a second finger in the stick zone)
+            // Nothing exactly under the finger: take the nearest button within a generous radius so a slightly
+            // missed press still counts, instead of being swallowed.
+            DK64Control* nearby = [self controlAtPoint:p slop:40.0];
+            if (nearby == nil) continue;
+            record.control = nearby;
+            [self pressControl:nearby];
         }
         [_records setObject:record forKey:touch];
+        DK64_LOG("TOUCH down %p -> %s at (%.0f,%.0f) fingersOnOverlay=%lu", (__bridge void*)touch,
+                 record.isStick ? "STICK" : DK64ActionName(record.control.action), p.x, p.y, (unsigned long)_records.count);
     }
     [self applyState];
 }
@@ -631,10 +740,16 @@ static NSString* DK64ActionLabel(DK64Action action) {
 - (void)endTouches:(NSSet<UITouch*>*)touches cancelled:(BOOL)cancelled {
     for (UITouch* touch in touches) {
         DK64TouchRecord* record = [_records objectForKey:touch];
-        if (record == nil) continue;
+        if (record == nil) {
+            DK64_LOG("TOUCH %s %p (no record: it was never assigned to a control)", cancelled ? "CANCELLED" : "up", (__bridge void*)touch);
+            continue;
+        }
+        DK64_LOG("TOUCH %s %p <- %s phase=%ld fingersOnOverlay=%lu", cancelled ? "CANCELLED by the system" : "up", (__bridge void*)touch,
+                 record.isStick ? "STICK" : DK64ActionName(record.control.action), (long)touch.phase, (unsigned long)_records.count);
         if (record.isStick) {
             _stickTouch = nil;
             _stickVector = CGPointZero;
+            [self moveStickBaseTo:_stickRestCenter];
         } else if (record.control != nil) {
             [self releaseControl:record.control immediately:cancelled];
         }
@@ -652,6 +767,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
 }
 
 - (void)resetAll {
+    DK64_LOG("TOUCH resetAll: dropping %lu active finger(s)", (unsigned long)_records.count);
     for (DK64Control* control in _controls) {
         control.generation++;
         control.touchCount = 0;
@@ -660,6 +776,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
     [_records removeAllObjects];
     _stickTouch = nil;
     _stickVector = CGPointZero;
+    [self moveStickBaseTo:_stickRestCenter];
     [self applyState];
 }
 
@@ -671,13 +788,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
 
 @implementation DK64OverlayWindow
 - (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
-    UIView* hit = [super hitTest:point withEvent:event];
-    // Hitting the bare window means "no control here": let the SDL window below handle the touch.
-    // (The overlay view is the root view and only returns itself when a control/stick was hit.)
-    if (hit == self) {
-        return nil;
-    }
-    return hit;
+    return [super hitTest:point withEvent:event];
 }
 @end
 
@@ -692,6 +803,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
 
 static DK64OverlayWindow* g_overlay_window = nil;
 static DK64TouchOverlayView* g_overlay = nil;
+static BOOL g_gameplay = NO;           // game running and no UI menu capturing input; otherwise the overlay is hidden
 static BOOL g_suspended = NO;          // temporarily hidden (e.g. while the ROM file picker is up)
 static BOOL g_observers_installed = NO;
 
@@ -782,7 +894,7 @@ static void refresh_overlay_state() {
     }
 
     if (g_overlay_window != nil) {
-        BOOL show = active && !g_suspended;
+        BOOL show = active && !g_suspended && g_gameplay;
         if (g_overlay_window.hidden == show) {
             g_overlay_window.hidden = !show;
         }
@@ -805,6 +917,14 @@ static void install_observers() {
     // Fires when the on-screen gamepad switch changes in the iOS Settings app.
     [center addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:main usingBlock:refresh];
     [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:main usingBlock:refresh];
+    void (^releaseAll)(NSNotification*) = ^(NSNotification* note) {
+        (void)note;
+        DK64_LOG("TOUCH lifecycle: releasing all virtual controls");
+        [g_overlay resetAll];
+    };
+    [center addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:main usingBlock:releaseAll];
+    [center addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:main usingBlock:releaseAll];
+    [center addObserverForName:UIApplicationDidChangeStatusBarOrientationNotification object:nil queue:main usingBlock:releaseAll];
     [GCController startWirelessControllerDiscoveryWithCompletionHandler:^{}];
 }
 
@@ -824,6 +944,15 @@ extern "C" void dk64_ios_touch_controls_set_visible(int visible) {
     // (user setting + physical controller presence), so just re-evaluate.
     (void)visible;
     run_on_main(^{ refresh_overlay_state(); });
+}
+
+extern "C" void dk64_ios_touch_controls_set_gameplay(int gameplay) {
+    BOOL value = gameplay ? YES : NO;
+    if (g_gameplay != value) {
+        g_gameplay = value;
+        DK64_LOG("TOUCH mode: %s", value ? "gameplay (virtual controller)" : "menu (touch -> mouse)");
+        run_on_main(^{ refresh_overlay_state(); });  // UIKit work must happen on the main thread
+    }
 }
 
 extern "C" void dk64_ios_touch_controls_set_suspended(int suspended) {

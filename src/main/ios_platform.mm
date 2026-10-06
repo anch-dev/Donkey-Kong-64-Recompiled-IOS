@@ -23,6 +23,29 @@ extern "C" void dk64_ios_prepare_audio(void) {
     if (error != nil) {
         NSLog(@"[DK64 iOS] AVAudioSession activation failed: %@", error);
     }
+
+    // Diagnostics for crackle/clipping reports.
+    NSMutableArray<NSString*>* outputs = [NSMutableArray array];
+    for (AVAudioSessionPortDescription* port in session.currentRoute.outputs) {
+        [outputs addObject:[NSString stringWithFormat:@"%@(%@)", port.portName, port.portType]];
+    }
+    DK64_LOG("AUDIO session: category=%s sampleRate=%.0f preferredIOBuffer=%.1fms actualIOBuffer=%.1fms outputLatency=%.1fms route=%s otherAudioPlaying=%d",
+             session.category.UTF8String, session.sampleRate, session.preferredIOBufferDuration * 1000.0, session.IOBufferDuration * 1000.0,
+             session.outputLatency * 1000.0, [outputs componentsJoinedByString:@","].UTF8String, (int)session.otherAudioPlaying);
+
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    [center addObserverForName:AVAudioSessionInterruptionNotification object:nil queue:nil usingBlock:^(NSNotification* note) {
+        DK64_LOG("AUDIO interruption: type=%ld option=%ld", (long)[note.userInfo[AVAudioSessionInterruptionTypeKey] integerValue],
+                 (long)[note.userInfo[AVAudioSessionInterruptionOptionKey] integerValue]);
+    }];
+    [center addObserverForName:AVAudioSessionRouteChangeNotification object:nil queue:nil usingBlock:^(NSNotification* note) {
+        AVAudioSession* s = [AVAudioSession sharedInstance];
+        DK64_LOG("AUDIO route change: reason=%ld sampleRate=%.0f actualIOBuffer=%.1fms", (long)[note.userInfo[AVAudioSessionRouteChangeReasonKey] integerValue],
+                 s.sampleRate, s.IOBufferDuration * 1000.0);
+    }];
+    [center addObserverForName:AVAudioSessionMediaServicesWereResetNotification object:nil queue:nil usingBlock:^(NSNotification*) {
+        DK64_LOG("AUDIO media services were reset");
+    }];
 }
 
 extern "C" void dk64_ios_import_rom_from_documents(void) {
@@ -46,6 +69,9 @@ extern "C" void dk64_ios_import_rom_from_documents(void) {
     NSURL* appData = [appSupport URLByAppendingPathComponent:@"DK64Recompiled" isDirectory:YES];
     if (![fm createDirectoryAtURL:appData withIntermediateDirectories:YES attributes:nil error:&error]) return;
     NSURL* destination = [appData URLByAppendingPathComponent:@"DK64.z64"];
+
+    g_stored_rom_at_boot = [fm fileExistsAtPath:destination.path] ? 1 : 0;
+    DK64_LOG("ROM: stored ROM present at boot = %d (%s)", g_stored_rom_at_boot, destination.path.UTF8String);
 
     // Interrupted imports leave only ".import-*.tmp" files; the final ROM is only ever created by an atomic rename.
     dk64_rom_cleanup_temp_files();
@@ -77,6 +103,10 @@ extern "C" void dk64_ios_import_rom_from_documents(void) {
         DK64_LOG("ROM import: skipped %s (%s)", source.lastPathComponent.UTF8String, dk64_rom_status_message(status).UTF8String);
     }
 }
+
+static int g_stored_rom_at_boot = 0;
+
+extern "C" int dk64_ios_rom_stored_at_boot(void) { return g_stored_rom_at_boot; }
 
 extern "C" void dk64_ios_prepare_filesystem(void) {
     NSFileManager* fm = [NSFileManager defaultManager];

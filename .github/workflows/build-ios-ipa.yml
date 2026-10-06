@@ -263,6 +263,47 @@ jobs:
           p.write_text(s)
           PY
 
+      - name: Add a pressed (recessed) state to launcher buttons
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          h = Path("lib/RecompFrontend/recompui/src/base/ui_game_option.h")
+          c = Path("lib/RecompFrontend/recompui/src/base/ui_game_option.cpp")
+          hs, cs = h.read_text(), c.read_text()
+
+          def swap(text, old, new):
+              if text.count(old) != 1:
+                  raise SystemExit("patch anchor not found exactly once: " + old[:60])
+              return text.replace(old, new)
+
+          hs = swap(hs, "        Style hover_disabled_style;\n", "        Style hover_disabled_style;\n        Style pressed_style;\n")
+          cs = swap(cs, "Events(EventType::Click, EventType::Hover, EventType::Enable, EventType::Focus)",
+                        "Events(EventType::Click, EventType::Hover, EventType::Enable, EventType::Focus, EventType::MouseButton)")
+          cs = swap(cs, "        add_style(&hover_disabled_style, { hover_state, disabled_state });\n",
+                        "        add_style(&hover_disabled_style, { hover_state, disabled_state });\n"
+                        "        // Pressed = physically pushed in: shifted down, darker, dimmer text. Distinct from hover/focus.\n"
+                        "        pressed_style.set_translate_2D(0.0f, 5.0f);\n"
+                        "        pressed_style.set_background_color(Color{ 0x1C, 0x0C, 0x02, 0xF0 });\n"
+                        "        pressed_style.set_color(Color{ 0xE0, 0xB0, 0x30, 0xFF });\n"
+                        "        add_style(&pressed_style, \"pressed\");\n")
+          cs = swap(cs, "            set_style_enabled(hover_state, std::get<EventHover>(e.variant).active && is_enabled());\n",
+                        "            set_style_enabled(hover_state, std::get<EventHover>(e.variant).active && is_enabled());\n"
+                        "            if (!std::get<EventHover>(e.variant).active) {\n"
+                        "                set_style_enabled(\"pressed\", false);  // finger/pointer slid off while held\n"
+                        "            }\n")
+          cs = swap(cs, "        case EventType::Enable:\n            {\n                bool enable_active",
+                        "        case EventType::MouseButton: {\n"
+                        "            const auto& mouse = std::get<EventMouseButton>(e.variant);\n"
+                        "            if (mouse.button == MouseButton::Left) {\n"
+                        "                set_style_enabled(\"pressed\", mouse.pressed && is_enabled());\n"
+                        "            }\n"
+                        "            break;\n"
+                        "        }\n"
+                        "        case EventType::Enable:\n            {\n                bool enable_active")
+          h.write_text(hs)
+          c.write_text(cs)
+          PY
+
       - name: Make touch behave as a mouse in RmlUi menus (iOS)
         run: |
           python3 - <<'PY'

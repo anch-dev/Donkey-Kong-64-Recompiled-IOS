@@ -1,5 +1,6 @@
 // Verbose logging for the iOS port. Intentionally dependency-free so it can be initialised first thing in main().
 #include <string>
+#include <algorithm>
 #include "ios_log.h"
 
 #include <SDL2/SDL.h>
@@ -277,5 +278,45 @@ extern "C" void dk64_ios_log_window_info(void* sdl_window) {
     SDL_DisplayMode mode;
     if (SDL_GetCurrentDisplayMode(0, &mode) == 0) {
         dk64_ios_logf("SDL display 0: %dx%d @%dHz", mode.w, mode.h, mode.refresh_rate);
+    }
+}
+
+extern "C" void dk64_ios_log_frame_tick(void) {
+    static Uint64 window_start = 0, last_frame = 0, last_spike_log = 0;
+    static uint32_t frames = 0, hitches25 = 0, hitches50 = 0;
+    static double max_dt = 0.0, sum_dt = 0.0;
+    static uint32_t summaries = 0;
+    const Uint64 freq = SDL_GetPerformanceFrequency();
+    const Uint64 now = SDL_GetPerformanceCounter();
+    if (window_start == 0) {
+        window_start = last_frame = now;
+        return;
+    }
+    const double dt_ms = (now - last_frame) * 1000.0 / freq;
+    last_frame = now;
+    frames++;
+    sum_dt += dt_ms;
+    max_dt = std::max(max_dt, dt_ms);
+    if (dt_ms > 25.0) hitches25++;
+    if (dt_ms > 50.0) hitches50++;
+    if (dt_ms > 100.0 && (now - last_spike_log) * 1000 / freq > 1000) {
+        last_spike_log = now;
+        dk64_ios_logf("PERF frame spike: %.1f ms (resident %llu MB, thermal %ld)", dt_ms, (unsigned long long)resident_mb(),
+                      (long)NSProcessInfo.processInfo.thermalState);
+    }
+    const double elapsed = (now - window_start) / (double)freq;
+    if (elapsed >= 5.0) {
+        dk64_ios_logf("PERF 5s: %u frames (%.1f fps) frame ms avg/max=%.1f/%.1f hitches >25ms=%u >50ms=%u | resident=%llu MB thermal=%ld lowPower=%d",
+                      frames, frames / elapsed, sum_dt / std::max(frames, 1u), max_dt, hitches25, hitches50, (unsigned long long)resident_mb(),
+                      (long)NSProcessInfo.processInfo.thermalState, (int)NSProcessInfo.processInfo.lowPowerModeEnabled);
+        frames = hitches25 = hitches50 = 0;
+        max_dt = sum_dt = 0.0;
+        window_start = now;
+        if (++summaries % 6 == 0) {  // every ~30 s
+            UIDevice* device = UIDevice.currentDevice;
+            device.batteryMonitoringEnabled = YES;
+            dk64_ios_logf("HEARTBEAT: uptime=%.0fs battery=%.0f%% state=%ld appState=%ld", NSProcessInfo.processInfo.systemUptime,
+                          device.batteryLevel * 100.0, (long)device.batteryState, (long)UIApplication.sharedApplication.applicationState);
+        }
     }
 }

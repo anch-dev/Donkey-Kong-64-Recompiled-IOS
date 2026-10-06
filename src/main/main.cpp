@@ -298,8 +298,20 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 
 void update_gfx(void*) {
 #if defined(DK64_IOS)
-    // The touch overlay lives in its own transparent UIWindow above the SDL window. Touches that
-    // miss a virtual control fall through to SDL, whose touch->mouse translation drives the menus.
+    // The touch overlay lives in its own transparent UIWindow above the SDL window and is shown only during gameplay
+    // (it owns every touch then). In menus it is hidden and SDL's touch->mouse translation drives the UI.
+    dk64_ios_log_frame_tick();
+    {
+        static int last_started = -1, last_capturing = -1;
+        const int started = ultramodern::is_game_started() ? 1 : 0;
+        const int capturing = recompui::is_context_capturing_input() ? 1 : 0;
+        if (started != last_started || capturing != last_capturing) {
+            DK64_LOG("STATE game_started=%d ui_capturing_input=%d", started, capturing);
+            last_started = started;
+            last_capturing = capturing;
+        }
+    }
+    dk64_ios_touch_controls_set_gameplay(ultramodern::is_game_started() && !recompui::is_context_capturing_input() ? 1 : 0);
     dk64_ios_touch_controls_tick();
 #endif
     recompinput::handle_events();
@@ -345,6 +357,15 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
     // Convert the audio from 16-bit values to floats and swap the audio channels into the
     // swap buffer to correct for the address xor caused by endianness handling.
     float cur_main_volume = static_cast<float>(recompui::config::sound::get_main_volume()) / 100.0f; // Get the current main volume, normalized to 0.0-1.0.
+#if defined(DK64_IOS)
+    {
+        static float last_logged_volume = -1.0f;
+        if (cur_main_volume != last_logged_volume) {
+            DK64_LOG("AUDIO main volume = %.2f", cur_main_volume);
+            last_logged_volume = cur_main_volume;
+        }
+    }
+#endif
     for (size_t i = 0; i < sample_count; i += input_channels) {
         swap_buffer[i + 0 + duplicated_input_frames * input_channels] = audio_data[i + 1] * (0.5f / 32768.0f) * cur_main_volume;
         swap_buffer[i + 1 + duplicated_input_frames * input_channels] = audio_data[i + 0] * (0.5f / 32768.0f) * cur_main_volume;
@@ -375,6 +396,41 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
     // Prevent audio latency from building up by skipping samples in incoming audio when too many samples are already queued.
     // Skip samples based on how many microseconds of samples are queued already.
     uint32_t skip_factor = cur_queued_microseconds / 100000;
+#if defined(DK64_IOS)
+    {
+        // Audio diagnostics (written to DK64Logs/dk64.log). The queue is measured in OUTPUT-rate frames, so also log the
+        // true queued time; the game's own figure above divides by the input sample rate.
+        static Uint64 window_start = 0, last_call = 0, last_event_log = 0;
+        static uint32_t calls = 0, skips = 0, starved = 0;
+        static uint64_t q_min = UINT64_MAX, q_max = 0, q_sum = 0, max_gap_us = 0;
+        const Uint64 freq = SDL_GetPerformanceFrequency();
+        const Uint64 now = SDL_GetPerformanceCounter();
+        const uint64_t true_queued_us = uint64_t(SDL_GetQueuedAudioSize(audio_device)) / bytes_per_frame * 1000000 / output_sample_rate;
+        if (window_start == 0) { window_start = now; last_call = now; }
+        const uint64_t gap_us = (now - last_call) * 1000000 / freq;
+        last_call = now;
+        calls++;
+        q_min = std::min(q_min, true_queued_us);
+        q_max = std::max(q_max, true_queued_us);
+        q_sum += true_queued_us;
+        max_gap_us = std::max(max_gap_us, gap_us);
+        const bool ran_dry = true_queued_us < 2000;  // device had (almost) nothing left: an underrun/gap is likely
+        if (ran_dry) starved++;
+        if (skip_factor != 0) skips++;
+        if ((skip_factor != 0 || ran_dry) && (now - last_event_log) * 1000 / freq > 250) {
+            last_event_log = now;
+            DK64_LOG("AUDIO %s: queued(true)=%.1fms queued(game calc)=%.1fms skip_factor=%u gap_since_last_call=%.1fms incoming=%zu samples in_rate=%u out_rate=%u",
+                     skip_factor != 0 ? "SKIPPING SAMPLES (latency limiter)" : "QUEUE RAN DRY (likely underrun)",
+                     true_queued_us / 1000.0, cur_queued_microseconds / 1000.0, skip_factor, gap_us / 1000.0, sample_count, sample_rate, output_sample_rate);
+        }
+        if ((now - window_start) / freq >= 5) {
+            DK64_LOG("AUDIO 5s summary: calls=%u queued ms min/avg/max=%.1f/%.1f/%.1f max_gap=%.1fms skips=%u ran_dry=%u in_rate=%u out_rate=%u",
+                     calls, q_min / 1000.0, (q_sum / (double)std::max(calls, 1u)) / 1000.0, q_max / 1000.0, max_gap_us / 1000.0, skips, starved,
+                     sample_rate, output_sample_rate);
+            window_start = now; calls = skips = starved = 0; q_min = UINT64_MAX; q_max = q_sum = max_gap_us = 0;
+        }
+    }
+#endif
     if (skip_factor != 0) {
         uint32_t skip_ratio = 1 << skip_factor;
         num_bytes_to_queue /= skip_ratio;
@@ -425,6 +481,9 @@ void update_audio_converter() {
 }
 
 void set_frequency(uint32_t freq) {
+#if defined(DK64_IOS)
+    DK64_LOG("AUDIO game sample rate changed: %u -> %u Hz", sample_rate, freq);
+#endif
     sample_rate = freq;
     
     update_audio_converter();
@@ -443,7 +502,15 @@ bool reset_audio(uint32_t output_freq) {
         .userdata = nullptr
     };
 
+#if defined(DK64_IOS)
+    SDL_AudioSpec obtained{};
+    audio_device = SDL_OpenAudioDevice(nullptr, false, &spec_desired, &obtained, 0);
+    DK64_LOG("AUDIO device opened: id=%u driver=%s asked freq=%d samples=%u -> got freq=%d format=0x%x channels=%u samples=%u size=%u bytes",
+             (unsigned)audio_device, SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "?", spec_desired.freq, (unsigned)spec_desired.samples,
+             obtained.freq, (unsigned)obtained.format, (unsigned)obtained.channels, (unsigned)obtained.samples, (unsigned)obtained.size);
+#else
     audio_device = SDL_OpenAudioDevice(nullptr, false, &spec_desired, nullptr, 0);
+#endif
     if (audio_device == 0) {
         std::string audio_error = std::string("No audio device could be found. Please make sure an audio device is available.\nError opening audio device: ") + std::string(SDL_GetError());
         recompui::message_box(audio_error.c_str());
@@ -681,6 +748,109 @@ void reorder_texture_pack(recomp::mods::ModContext&) {
     recompui::renderer::trigger_texture_pack_update();
 }
 
+#if defined(DK64_IOS)
+// ---- iOS launcher: centred button column, explicit ROM state, "Replace ROM" ----------------------------------------
+namespace {
+struct IosRomMenuState {
+    recompui::GameOption* start_option = nullptr;
+    std::u8string game_id;
+};
+IosRomMenuState g_ios_rom_menu;
+
+void ios_set_start_option_title(const std::string& title) {
+    if (g_ios_rom_menu.start_option == nullptr) return;
+    recompui::ContextId ui_context = recompui::get_launcher_context_id();
+    bool opened = ui_context.open_if_not_already();
+    g_ios_rom_menu.start_option->set_title(title);
+    if (opened) ui_context.close();
+}
+
+void ios_replace_rom_done(void*, int success, const char* path) {
+    if (!success) return;  // cancelled or failed (the importer already showed why)
+    recomp::RomValidationError error = recomp::select_rom(std::filesystem::path{path}, g_ios_rom_menu.game_id);
+    switch (error) {
+        case recomp::RomValidationError::Good:
+            DK64_LOG("ROM replaced successfully");
+            ios_set_start_option_title("Start Game");
+            recompui::message_box("ROM updated. Donkey Kong 64 ROM ready.");
+            return;
+        case recomp::RomValidationError::FailedToOpen: recompui::message_box("Failed to open ROM file."); break;
+        case recomp::RomValidationError::NotARom: recompui::message_box("Invalid ROM: this is not a valid N64 ROM file."); break;
+        case recomp::RomValidationError::IncorrectRom: recompui::message_box("Wrong game: this ROM is not Donkey Kong 64."); break;
+        case recomp::RomValidationError::NotYet: recompui::message_box("This game isn't supported yet."); break;
+        case recomp::RomValidationError::IncorrectVersion:
+            recompui::message_box("Wrong Donkey Kong 64 revision.\nThis project requires the NTSC-U N64 version."); break;
+        case recomp::RomValidationError::OtherError: recompui::message_box("An unknown error has occurred."); break;
+    }
+    DK64_LOG("ROM replace rejected (error %d); the previous ROM is kept", (int)error);
+}
+}  // namespace
+
+void on_launcher_init(recompui::LauncherMenu *menu) {
+    auto game_options_menu = menu->init_game_options_menu(
+        supported_games[0].game_id,
+        supported_games[0].mod_game_id,
+        supported_games[0].display_name,
+        supported_games[0].thumbnail_bytes,
+        recompui::GameOptionsMenuLayout::Center
+    );
+
+    // ROM state, from librecomp's startup hash check (is_rom_valid) plus whether a stored file existed before that check.
+    const bool rom_ready = recomp::is_rom_valid(supported_games[0].game_id);
+    const bool rom_was_stored = dk64_ios_rom_stored_at_boot() != 0;
+    const char* state = rom_ready ? "READY" : (rom_was_stored ? "INVALID" : "NOT FOUND");
+    DK64_LOG("ROM state at launcher init: %s", state);
+
+    g_ios_rom_menu.game_id = supported_games[0].game_id;
+    g_ios_rom_menu.start_option = game_options_menu->add_start_game_or_load_rom_option(
+        rom_was_stored ? "Select ROM (invalid ROM)" : "Select ROM (ROM not found)", "Start Game");
+    game_options_menu->add_setup_controls_option();
+    game_options_menu->add_settings_option();
+    game_options_menu->add_mods_option();
+    if (rom_ready) {
+        game_options_menu->add_option("Replace ROM", []() { dk64_ios_pick_rom_async(&ios_replace_rom_done, nullptr); });
+    }
+    game_options_menu->add_exit_option();
+
+    const recompui::Color text_color{ 0xFF, 0xE0, 0x66, 0xFF };
+    const recompui::Color gold{ 0xFF, 0xC8, 0x1E, 0xFF };
+    for (auto option : game_options_menu->get_options()) {
+        // Real, touch-sized buttons: >= 44 pt on a phone (the launcher UI is 1080 dp tall).
+        option->set_justify_content(recompui::JustifyContent::Center);
+        option->set_height(112.0f);
+        option->set_border_radius(28.0f);
+        option->set_border_width(4.0f);
+        option->set_border_color(gold);
+        option->set_background_color(recompui::Color{ 0x3A, 0x1E, 0x08, 0xD8 });
+        option->set_color(text_color);
+
+        // Focused/hovered = lit; pressed (added in the GameOption patch) = recessed. They are distinct states.
+        for (auto style : std::vector<recompui::Style *>{ &option->hover_style, &option->focus_style }) {
+            style->set_background_color(recompui::Color{ 0xFF, 0xB8, 0x1E, 0xE8 });
+            style->set_color(recompui::Color{ 0x2A, 0x12, 0x02, 0xFF });
+        }
+    }
+
+    recompui::Element *menu_container = menu->get_menu_container();
+    menu_container->set_width(1440);
+    menu_container->unset_left();
+    menu_container->set_top(dk64::launcher_options_top_offset);
+    menu_container->set_bottom(-dk64::launcher_options_top_offset);
+    menu_container->set_right(50, recompui::Unit::Percent);
+    menu_container->set_translate_2D(50.0f, 0.0f, recompui::Unit::Percent);
+
+    // Centre the button column in the middle of the screen (the desktop layout anchors it to the right edge).
+    game_options_menu->unset_right();
+    game_options_menu->set_width(620.0f);
+    game_options_menu->set_left(50.0f, recompui::Unit::Percent);
+    game_options_menu->set_bottom(50.0f, recompui::Unit::Percent);
+    game_options_menu->set_translate_2D(-50.0f, 50.0f, recompui::Unit::Percent);
+
+    menu->remove_default_title();
+
+    dk64::launcher_animation_setup(menu);
+}
+#else
 void on_launcher_init(recompui::LauncherMenu *menu) {
     auto game_options_menu = menu->init_game_options_menu(
         supported_games[0].game_id,
@@ -720,6 +890,7 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
 
     dk64::launcher_animation_setup(menu);
 }
+#endif
 
 #define REGISTER_FUNC(name) recomp::overlays::register_base_export(#name, name)
 

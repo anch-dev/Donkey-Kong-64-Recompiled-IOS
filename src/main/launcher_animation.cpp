@@ -413,7 +413,11 @@ void dk64::launcher_animation_update(recompui::LauncherMenu *menu) {
         }
 
         float game_option_menu_right = interpolate_value(launcher_options_right_position_start, launcher_options_right_position_end, wrapper_phase, InterpolationMethod::Smootherstep);
-        menu->get_game_options_menu()->set_right(game_option_menu_right);
+#if !defined(DK64_IOS)
+        menu->get_game_options_menu()->set_right(game_option_menu_right);  // desktop slides the menu in from the right
+#else
+        (void)game_option_menu_right;  // iOS keeps the centred column
+#endif
 
         launcher_context.wrapper_phase = wrapper_phase;
     }
