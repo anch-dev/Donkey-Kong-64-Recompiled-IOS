@@ -8,6 +8,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+static int g_stored_rom_at_boot = 0;
+
+extern "C" int dk64_ios_rom_stored_at_boot(void) { return g_stored_rom_at_boot; }
+
 extern "C" void dk64_ios_prepare_audio(void) {
     AVAudioSession* session = [AVAudioSession sharedInstance];
     NSError* error = nil;
@@ -103,10 +107,6 @@ extern "C" void dk64_ios_import_rom_from_documents(void) {
         DK64_LOG("ROM import: skipped %s (%s)", source.lastPathComponent.UTF8String, dk64_rom_status_message(status).UTF8String);
     }
 }
-
-static int g_stored_rom_at_boot = 0;
-
-extern "C" int dk64_ios_rom_stored_at_boot(void) { return g_stored_rom_at_boot; }
 
 extern "C" void dk64_ios_prepare_filesystem(void) {
     NSFileManager* fm = [NSFileManager defaultManager];
