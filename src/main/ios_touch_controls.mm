@@ -767,7 +767,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
 }
 
 - (void)resetAll {
-    DK64_LOG("TOUCH resetAll: dropping %lu active finger(s)", (unsigned long)_records.count);
+    if (_records.count > 0) DK64_LOG("TOUCH resetAll: dropping %lu active finger(s)", (unsigned long)_records.count);
     for (DK64Control* control in _controls) {
         control.generation++;
         control.touchCount = 0;

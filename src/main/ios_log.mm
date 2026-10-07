@@ -299,6 +299,10 @@ extern "C" void dk64_ios_log_frame_tick(void) {
     max_dt = std::max(max_dt, dt_ms);
     if (dt_ms > 25.0) hitches25++;
     if (dt_ms > 50.0) hitches50++;
+    if (dt_ms > 1500.0) {
+        dk64_ios_logf("PERF main loop resumed after a %.0f ms stall (appState=%ld) - e.g. returning from the background", dt_ms,
+                      (long)UIApplication.sharedApplication.applicationState);
+    }
     if (dt_ms > 100.0 && (now - last_spike_log) * 1000 / freq > 1000) {
         last_spike_log = now;
         dk64_ios_logf("PERF frame spike: %.1f ms (resident %llu MB, thermal %ld)", dt_ms, (unsigned long long)resident_mb(),

@@ -395,7 +395,14 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
         throw std::runtime_error("Error using SDL audio converter");
     }
 
+#if defined(DK64_IOS)
+    // The queue holds frames at the device's OUTPUT rate (48 kHz), but the game divided by the game's own INPUT rate
+    // (22.05 kHz). That overstated the queued time ~2.2x, so the latency limiter below (>100 ms) fired constantly with only
+    // ~48 ms really queued, dropping samples several times a second: the audible crackle every few seconds.
+    uint64_t cur_queued_microseconds = uint64_t(SDL_GetQueuedAudioSize(audio_device)) / bytes_per_frame * 1000000 / output_sample_rate;
+#else
     uint64_t cur_queued_microseconds = uint64_t(SDL_GetQueuedAudioSize(audio_device)) / bytes_per_frame * 1000000 / sample_rate;
+#endif
     uint32_t num_bytes_to_queue = audio_convert.len_cvt - output_channels * discarded_output_frames * sizeof(swap_buffer[0]);
     float* samples_to_queue = swap_buffer.data() + output_channels * discarded_output_frames / 2;
 
@@ -524,6 +531,24 @@ bool reset_audio(uint32_t output_freq) {
     }
 
     SDL_PauseAudioDevice(audio_device, 0);
+#if defined(DK64_IOS)
+    // iOS: do not keep playing/queuing audio while the app is resigning/backgrounded; resume cleanly on return.
+    static bool lifecycle_watch_installed = false;
+    if (!lifecycle_watch_installed) {
+        lifecycle_watch_installed = true;
+        SDL_AddEventWatch([](void*, SDL_Event* e) -> int {
+            if (e->type == SDL_APP_WILLENTERBACKGROUND) {
+                DK64_LOG("AUDIO pausing device (app resigning active)");
+                SDL_PauseAudioDevice(audio_device, 1);
+            } else if (e->type == SDL_APP_DIDENTERFOREGROUND) {
+                SDL_ClearQueuedAudio(audio_device);  // drop anything stale that built up while paused
+                SDL_PauseAudioDevice(audio_device, 0);
+                DK64_LOG("AUDIO resumed device (app active again), queue cleared");
+            }
+            return 1;
+        }, nullptr);
+    }
+#endif
 
     output_sample_rate = output_freq;
     update_audio_converter();
