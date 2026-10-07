@@ -130,6 +130,39 @@ jobs:
           test "$(git -C "$PLUME" hash-object plume_metal.cpp)" = "373c87e3403430d6686153efcb6a1a44a7f1a876"
           patch -d "$PLUME" -p1 -F 5 --batch --forward < "$GITHUB_WORKSPACE/.github/patches/plume-ios-metal.patch"
 
+
+      - name: Size the Metal swap chain from the screen's native scale (any iPhone/iPad)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/rt64/src/contrib/plume/plume_apple.mm")
+          s = p.read_text()
+          old = (
+              "        CGFloat scaleFactor = view.contentScaleFactor;\n"
+              "        if (scaleFactor <= 0) {\n"
+              "            scaleFactor = UIScreen.mainScreen.scale;\n"
+              "        }\n"
+          )
+          if s.count(old) != 1:
+              raise SystemExit("plume scale anchor not found exactly once")
+          new = (
+              "        // Use the screen's NATIVE pixel scale (iPhone ~3x, iPad 2x, zoomed display modes included).\n"
+              "        // view.contentScaleFactor reports 1.0 for SDL's window (and inside LiveContainer), which made the\n"
+              "        // swap chain 1x and the whole UI blurry and mis-scaled.\n"
+              "        UIScreen *screen = view.window.screen;\n"
+              "        if (screen == nil && [view isKindOfClass:[UIWindow class]]) {\n"
+              "            screen = ((UIWindow *)view).screen;\n"
+              "        }\n"
+              "        if (screen == nil) {\n"
+              "            screen = UIScreen.mainScreen;\n"
+              "        }\n"
+              "        CGFloat scaleFactor = screen.nativeScale > 0 ? screen.nativeScale : screen.scale;\n"
+              "        if (scaleFactor <= 0) {\n"
+              "            scaleFactor = view.contentScaleFactor > 0 ? view.contentScaleFactor : 1.0;\n"
+              "        }\n"
+          )
+          p.write_text(s.replace(old, new))
+          PY
       - name: Configure host patch recompiler
         run: |
           test -x "$GITHUB_WORKSPACE/host-tools/N64Recomp"

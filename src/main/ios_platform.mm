@@ -143,4 +143,8 @@ extern "C" void dk64_ios_fix_metal_layer_scale(void* ui_window, void* metal_laye
     layer.contentsScale = scale;
     CGRect bounds = window.bounds;
     layer.drawableSize = CGSizeMake(bounds.size.width * scale, bounds.size.height * scale);
+    DK64_LOG("DISPLAY: idiom=%s scale=%.2f nativeScale=%.2f screen=%s native=%s window=%s window.contentScaleFactor=%.2f -> drawable=%.0fx%.0f (renderer sizes its swap chain from nativeScale)",
+             UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad ? "iPad" : "iPhone", screen.scale, screen.nativeScale,
+             NSStringFromCGRect(screen.bounds).UTF8String, NSStringFromCGRect(screen.nativeBounds).UTF8String, NSStringFromCGRect(bounds).UTF8String,
+             window.contentScaleFactor, layer.drawableSize.width, layer.drawableSize.height);
 }
