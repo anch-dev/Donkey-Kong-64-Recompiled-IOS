@@ -163,6 +163,113 @@ jobs:
           )
           p.write_text(s.replace(old, new))
           PY
+
+      - name: Keep GPU work out of the background and never wait forever on a GPU fence (iOS)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/rt64/src/contrib/plume/plume_metal.cpp")
+          s = p.read_text()
+
+          def swap(old, new):
+              global s
+              if s.count(old) != 1:
+                  raise SystemExit("plume anchor not found exactly once: " + old[:70])
+              s = s.replace(old, new)
+
+          swap('#include "plume_metal.h"\n',
+               '#include "plume_metal.h"\n'
+               '\n'
+               '#if TARGET_OS_IPHONE\n'
+               '#include <chrono>\n'
+               '#include <unistd.h>\n'
+               '// Set by the app: 0 while it is resigning/backgrounded (iOS does not allow GPU work then).\n'
+               'extern "C" volatile int dk64_ios_gpu_allowed;\n'
+               'static void dk64WaitForGpu(const char *where) {\n'
+               '    if (dk64_ios_gpu_allowed) {\n'
+               '        return;\n'
+               '    }\n'
+               '    fprintf(stderr, "[PLUME] GPU work held back in %s (app not active)\\n", where);\n'
+               '    int waited_ms = 0;\n'
+               '    while (!dk64_ios_gpu_allowed && waited_ms < 30000) {  // safety cap so a missed notification cannot hang forever\n'
+               '        usleep(2000);\n'
+               '        waited_ms += 2;\n'
+               '    }\n'
+               '    fprintf(stderr, "[PLUME] GPU work released in %s after %d ms\\n", where, waited_ms);\n'
+               '}\n'
+               '#else\n'
+               'static inline void dk64WaitForGpu(const char *) {}\n'
+               '#endif\n')
+
+          swap('        // Create a command buffer just to encode the signal\n',
+               '        dk64WaitForGpu("acquireTexture");\n'
+               '        // Create a command buffer just to encode the signal\n')
+
+          swap('        // Create a new command buffer just for presenting\n',
+               '        dk64WaitForGpu("present");\n'
+               '        // Create a new command buffer just for presenting\n')
+
+          swap('        // Create a new command buffer to encode the wait semaphores into\n',
+               '        dk64WaitForGpu("executeCommandLists");\n'
+               '        // Create a new command buffer to encode the wait semaphores into\n')
+
+          swap('        const MetalCommandFence *metalFence = static_cast<MetalCommandFence *>(fence);\n'
+               '        dispatch_semaphore_wait(metalFence->semaphore, DISPATCH_TIME_FOREVER);\n',
+               '        const MetalCommandFence *metalFence = static_cast<MetalCommandFence *>(fence);\n'
+               '#if TARGET_OS_IPHONE\n'
+               '        // A command buffer that was in flight when the app lost GPU access can fail to complete, and waiting\n'
+               '        // forever then freezes the renderer for good after returning from the background. Wait in slices, keep\n'
+               '        // waiting while the app is inactive, and give up after ~4 s of being active again.\n'
+               '        for (int slice = 0;; slice++) {\n'
+               '            if (dispatch_semaphore_wait(metalFence->semaphore, dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC)) == 0) {\n'
+               '                break;\n'
+               '            }\n'
+               '            if (slice == 0) {\n'
+               '                fprintf(stderr, "[PLUME] waiting on a GPU fence for more than 500 ms (gpu allowed=%d)\\n", (int)dk64_ios_gpu_allowed);\n'
+               '            }\n'
+               '            if (dk64_ios_gpu_allowed && slice >= 8) {\n'
+               '                fprintf(stderr, "[PLUME] GPU fence never completed; giving up after %d ms\\n", (slice + 1) * 500);\n'
+               '                break;\n'
+               '            }\n'
+               '        }\n'
+               '#else\n'
+               '        dispatch_semaphore_wait(metalFence->semaphore, DISPATCH_TIME_FOREVER);\n'
+               '#endif\n')
+
+          swap('        presentBuffer->addCompletedHandler([drawableMtl, presentId, this](MTL::CommandBuffer* cmdBuffer) {\n',
+               '        presentBuffer->addCompletedHandler([drawableMtl, presentId, this](MTL::CommandBuffer* cmdBuffer) {\n'
+               '#if TARGET_OS_IPHONE\n'
+               '            if (cmdBuffer->status() == MTL::CommandBufferStatusError) {\n'
+               '                NS::Error *err = cmdBuffer->error();\n'
+               '                fprintf(stderr, "[PLUME] present command buffer FAILED: code=%ld %s\\n", err ? (long)err->code() : -1L,\n'
+               '                        (err && err->localizedDescription()) ? err->localizedDescription()->utf8String() : "?");\n'
+               '            }\n'
+               '#endif\n')
+
+          swap('        CA::MetalDrawable *nextDrawable = layer->nextDrawable();\n',
+               '#if TARGET_OS_IPHONE\n'
+               '        const auto dk64_t0 = std::chrono::steady_clock::now();\n'
+               '#endif\n'
+               '        CA::MetalDrawable *nextDrawable = layer->nextDrawable();\n'
+               '#if TARGET_OS_IPHONE\n'
+               '        {\n'
+               '            static std::chrono::steady_clock::time_point window_start = dk64_t0;\n'
+               '            static uint32_t acquires = 0, nils = 0;\n'
+               '            static double max_ms = 0.0;\n'
+               '            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - dk64_t0).count();\n'
+               '            acquires++;\n'
+               '            if (nextDrawable == nullptr) nils++;\n'
+               '            max_ms = std::max(max_ms, ms);\n'
+               '            if (std::chrono::duration<double>(dk64_t0 - window_start).count() >= 5.0) {\n'
+               '                fprintf(stderr, "[PLUME] 5s: drawable acquires=%u nil=%u max nextDrawable wait=%.1f ms\\n", acquires, nils, max_ms);\n'
+               '                window_start = dk64_t0;\n'
+               '                acquires = nils = 0;\n'
+               '                max_ms = 0.0;\n'
+               '            }\n'
+               '        }\n'
+               '#endif\n')
+          p.write_text(s)
+          PY
       - name: Configure host patch recompiler
         run: |
           test -x "$GITHUB_WORKSPACE/host-tools/N64Recomp"

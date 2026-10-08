@@ -21,6 +21,10 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+// Read by the renderer (plume, patched in the workflow): 0 while the app is resigning/backgrounded, when iOS does not permit GPU
+// work. Work submitted then can fail and leave fences that never complete, which froze the game after returning.
+extern "C" volatile int dk64_ios_gpu_allowed = 1;
+
 static int g_log_fd = -1;
 static char g_log_path[1024] = {};
 
@@ -195,6 +199,18 @@ extern "C" void dk64_ios_log_init(void) {
             dk64_ios_logf("LIFECYCLE: %s (resident %llu MB)", label.UTF8String, (unsigned long long)resident_mb());
         }];
     }
+    // The GPU gate is flipped synchronously on the posting (main) thread, not via an async hop, so no frame slips through.
+    [center addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil usingBlock:^(NSNotification*) {
+        dk64_ios_gpu_allowed = 0;
+        dk64_ios_logf("GPU gate CLOSED (app resigning active)");
+    }];
+    [center addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil usingBlock:^(NSNotification*) {
+        dk64_ios_gpu_allowed = 0;
+    }];
+    [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil usingBlock:^(NSNotification*) {
+        dk64_ios_gpu_allowed = 1;
+        dk64_ios_logf("GPU gate OPEN (app active)");
+    }];
     [center addObserverForName:UIApplicationDidReceiveMemoryWarningNotification object:nil queue:main usingBlock:^(NSNotification*) {
         dk64_ios_logf("!!! MEMORY WARNING (resident %llu MB)", (unsigned long long)resident_mb());
     }];
