@@ -844,22 +844,26 @@ static BOOL physical_controller_connected() {
 // When the hosting app's Info.plist declares GCSupportsControllerUserInteraction (LiveContainer's host app, or an older
 // build of ours), UIKit claims physical gamepad input for UI navigation and the GameController framework, and with it
 // SDL, never sees a button press: the pad shows up as connected (hiding the touch overlay) but does nothing. A
-// GCEventInteraction on the window routes gamepad events back to the GameController framework (iOS 17+).
+// GCEventInteraction on the window routes gamepad events back to the GameController framework (newer iOS only).
 static void route_gamepad_events_to_game(UIView* view) {
     if (view == nil) {
         return;
     }
-    if (@available(iOS 17.0, *)) {
-        for (id<UIInteraction> interaction in view.interactions) {
-            if ([interaction isKindOfClass:[GCEventInteraction class]]) {
-                return;
-            }
-        }
-        GCEventInteraction* interaction = [[GCEventInteraction alloc] init];
-        interaction.handledEventTypes = GCUIEventTypeGamepad;
-        [view addInteraction:interaction];
-        DK64_LOG("CONTROLLER GCEventInteraction installed on %s %p", NSStringFromClass([view class]).UTF8String, (__bridge void*)view);
+    // Looked up at runtime: the CI's SDK predates GCEventInteraction, and older iOS versions don't have it.
+    Class interactionClass = NSClassFromString(@"GCEventInteraction");
+    if (interactionClass == Nil) {
+        DK64_LOG("CONTROLLER GCEventInteraction not available on this iOS version");
+        return;
     }
+    for (id<UIInteraction> interaction in view.interactions) {
+        if ([interaction isKindOfClass:interactionClass]) {
+            return;
+        }
+    }
+    id<UIInteraction> interaction = [[interactionClass alloc] init];
+    [(NSObject*)interaction setValue:@(1) forKey:@"handledEventTypes"];  // GCUIEventTypeGamepad = 1 << 0
+    [view addInteraction:interaction];
+    DK64_LOG("CONTROLLER GCEventInteraction installed on %s %p", NSStringFromClass([view class]).UTF8String, (__bridge void*)view);
 }
 
 static void log_physical_controllers() {
