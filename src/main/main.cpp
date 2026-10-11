@@ -280,6 +280,8 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     void* ui_window = reinterpret_cast<void*>(wmInfo.info.uikit.window);
     void* metal_layer = reinterpret_cast<void*>(SDL_Metal_GetLayer(view));
     dk64_ios_fix_metal_layer_scale(ui_window, metal_layer);
+    // SDL's view controller now exists and reports landscape-only orientations; rotate if we are still in portrait.
+    dk64_ios_force_landscape();
 
     // Install the touch overlay (own UIWindow above the SDL window) once the Metal view exists.
     dk64_ios_log_window_info(window);
@@ -938,6 +940,10 @@ int main(int argc, char** argv) {
     // SDL exposes the phone's accelerometer as a joystick ("controller 0"). The game then treated it as a real
     // pad (log: "Couldn't find mapping for device (0)"). Only the on-screen / physical pads should count.
     SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+    // Landscape only, always. Without this SDL derives the allowed orientations from the window's initial size, so a
+    // launch in portrait (e.g. inside LiveContainer, whose own Info.plist allows portrait) locked the game to portrait.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    dk64_ios_force_landscape();
 #endif
     recomp::Version project_version{};
     if (!recomp::Version::from_string(version_string, project_version)) {

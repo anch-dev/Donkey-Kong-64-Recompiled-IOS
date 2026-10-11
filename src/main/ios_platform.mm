@@ -148,3 +148,55 @@ extern "C" void dk64_ios_fix_metal_layer_scale(void* ui_window, void* metal_laye
              NSStringFromCGRect(screen.bounds).UTF8String, NSStringFromCGRect(screen.nativeBounds).UTF8String, NSStringFromCGRect(bounds).UTF8String,
              window.contentScaleFactor, layer.drawableSize.width, layer.drawableSize.height);
 }
+
+static void dk64_request_landscape(void) {
+    UIApplication* app = UIApplication.sharedApplication;
+    if (@available(iOS 16.0, *)) {
+        for (UIScene* scene in app.connectedScenes) {
+            if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+            UIWindowScene* windowScene = (UIWindowScene*)scene;
+            for (UIWindow* window in windowScene.windows) {
+                [window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+            }
+            if (UIInterfaceOrientationIsLandscape(windowScene.interfaceOrientation)) continue;
+            UIWindowSceneGeometryPreferencesIOS* prefs =
+                [[[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:UIInterfaceOrientationMaskLandscape] autorelease];  // this file is not ARC
+            DK64_LOG("DISPLAY: scene is portrait (orientation %ld), requesting landscape", (long)windowScene.interfaceOrientation);
+            [windowScene requestGeometryUpdateWithPreferences:prefs errorHandler:^(NSError* error) {
+                DK64_LOG("DISPLAY: landscape request failed: %s", error.localizedDescription.UTF8String);
+            }];
+        }
+    } else {
+        UIInterfaceOrientation current = UIInterfaceOrientationUnknown;
+        for (UIScene* scene in app.connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                current = ((UIWindowScene*)scene).interfaceOrientation;
+                break;
+            }
+        }
+        if (UIInterfaceOrientationIsLandscape(current)) return;
+        DK64_LOG("DISPLAY: interface is portrait (orientation %ld), forcing landscape", (long)current);
+        // Pre-iOS 16 there is no public API to rotate on demand; this is the long-standing approach.
+        [UIDevice.currentDevice setValue:@(UIInterfaceOrientationLandscapeRight) forKey:@"orientation"];
+        [UIViewController attemptRotationToDeviceOrientation];
+    }
+}
+
+extern "C" void dk64_ios_force_landscape(void) {
+    void (^work)(void) = ^{
+        static BOOL observing = NO;
+        if (!observing) {
+            observing = YES;
+            [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                              object:nil
+                                                               queue:[NSOperationQueue mainQueue]
+                                                          usingBlock:^(NSNotification*) { dk64_request_landscape(); }];
+        }
+        dk64_request_landscape();
+    };
+    if ([NSThread isMainThread]) {
+        work();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), work);
+    }
+}

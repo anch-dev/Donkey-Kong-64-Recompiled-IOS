@@ -30,8 +30,6 @@
             <string>ExtendedGamepad</string>
         </dict>
     </array>
-    <key>GCSupportsControllerUserInteraction</key>
-    <true/>
     <key>UIFileSharingEnabled</key>
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>

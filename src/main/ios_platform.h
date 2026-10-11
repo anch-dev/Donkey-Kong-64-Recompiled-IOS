@@ -14,6 +14,9 @@ int dk64_ios_rom_stored_at_boot(void);
 typedef void (*DK64PickDone)(void* context, int success, const char* path);
 void dk64_ios_pick_rom_async(DK64PickDone done, void* context);
 void dk64_ios_fix_metal_layer_scale(void* ui_window, void* metal_layer);
+// Rotates every window scene to landscape now, and again whenever the app becomes active. Needed because the Info.plist
+// orientation list is ignored when running inside LiveContainer (the host app's list applies, which allows portrait).
+void dk64_ios_force_landscape(void);
 
 #ifdef __cplusplus
 }

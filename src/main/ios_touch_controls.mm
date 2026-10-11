@@ -447,7 +447,6 @@ static NSString* DK64ActionLabel(DK64Action action) {
     innerRing.fillColor = nil;
     innerRing.strokeColor = outlineColor.CGColor;
     innerRing.lineWidth = 2.0;
-    innerRing.opacity = 0.55;
     [self.layer addSublayer:innerRing];
 
     CGFloat thumbRadius = 28 * u;
@@ -461,6 +460,9 @@ static NSString* DK64ActionLabel(DK64Action action) {
     _stickThumb.shadowRadius = 3;
     _stickThumb.shadowOffset = CGSizeMake(0, 2);
     _stickThumb.position = _stickCenter;
+    _stickThumb.opacity = 0.0;
+    _stickBase.opacity = 0.0;
+    innerRing.opacity = 0.0;
     CGFloat dkSize = thumbRadius * 0.95;
     [_stickThumb addSublayer:DK64MakeText(@"DK", dkSize, DK64RGB(1.0, 0.86, 0.15), CGRectMake(-thumbRadius, -dkSize * 0.62, thumbRadius * 2, dkSize * 1.3), outlineColor)];
     [self.layer addSublayer:_stickThumb];
@@ -555,13 +557,6 @@ static NSString* DK64ActionLabel(DK64Action action) {
     return best;
 }
 
-- (BOOL)pointInStickZone:(CGPoint)point {
-    CGFloat dx = point.x - _stickCenter.x;
-    CGFloat dy = point.y - _stickCenter.y;
-    CGFloat zone = _stickRadius * 1.5;
-    return (dx * dx + dy * dy) <= zone * zone;
-}
-
 - (UIView*)hitTest:(CGPoint)point withEvent:(UIEvent*)event {
     if (self.hidden || self.alpha < 0.01) {
         return nil;
@@ -594,8 +589,9 @@ static NSString* DK64ActionLabel(DK64Action action) {
     _stickVector = CGPointMake(dx, dy);
 }
 
-// Floating stick: the stick base re-centres under the finger that starts it, then returns when it lifts.
-- (void)moveStickBaseTo:(CGPoint)center {
+// Floating stick: hidden until a finger lands on the left half of the screen, then drawn centred under that finger
+// (it stays anchored there while the finger moves) and hidden again when the finger lifts.
+- (void)showStickAt:(CGPoint)center {
     _stickCenter = center;
     CGPoint delta = CGPointMake(center.x - _stickRestCenter.x, center.y - _stickRestCenter.y);
     [CATransaction begin];
@@ -603,6 +599,20 @@ static NSString* DK64ActionLabel(DK64Action action) {
     CATransform3D t = CATransform3DMakeTranslation(delta.x, delta.y, 0);
     _stickBase.transform = t;
     _stickRing.transform = t;
+    _stickThumb.position = center;
+    _stickBase.opacity = 1.0;
+    _stickRing.opacity = 0.55;
+    _stickThumb.opacity = 1.0;
+    [CATransaction commit];
+}
+
+- (void)hideStick {
+    _stickCenter = _stickRestCenter;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _stickBase.opacity = 0.0;
+    _stickRing.opacity = 0.0;
+    _stickThumb.opacity = 0.0;
     [CATransaction commit];
 }
 
@@ -687,14 +697,14 @@ static NSString* DK64ActionLabel(DK64Action action) {
         if (control != nil) {
             record.control = control;
             [self pressControl:control];
-        } else if (_stickTouch == nil && (p.x < self.bounds.size.width * 0.5 || [self pointInStickZone:p])) {
+        } else if (_stickTouch == nil && p.x < self.bounds.size.width * 0.5) {
             record.isStick = YES;  // only one finger may own the stick
             _stickTouch = touch;
-            if (![self pointInStickZone:p]) {
-                CGFloat m = _stickRadius;
-                [self moveStickBaseTo:CGPointMake(std::max(m, std::min(self.bounds.size.width - m, p.x)),
-                                                  std::max(m, std::min(self.bounds.size.height - m, p.y)))];
-            }
+            // Centre the stick on the touch (clamped so the whole base stays on screen). The touch itself is the
+            // neutral position, so the stick starts at rest instead of jumping to wherever the old centre was.
+            CGFloat m = _stickRadius;
+            [self showStickAt:CGPointMake(std::max(m, std::min(self.bounds.size.width - m, p.x)),
+                                          std::max(m, std::min(self.bounds.size.height - m, p.y)))];
             [self updateStickWithTouch:touch];
         } else {
             // Nothing exactly under the finger: take the nearest button within a generous radius so a slightly
@@ -749,7 +759,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
         if (record.isStick) {
             _stickTouch = nil;
             _stickVector = CGPointZero;
-            [self moveStickBaseTo:_stickRestCenter];
+            [self hideStick];
         } else if (record.control != nil) {
             [self releaseControl:record.control immediately:cancelled];
         }
@@ -776,7 +786,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
     [_records removeAllObjects];
     _stickTouch = nil;
     _stickVector = CGPointZero;
-    [self moveStickBaseTo:_stickRestCenter];
+    [self hideStick];
     [self applyState];
 }
 
@@ -831,6 +841,42 @@ static BOOL physical_controller_connected() {
     return NO;
 }
 
+// When the hosting app's Info.plist declares GCSupportsControllerUserInteraction (LiveContainer's host app, or an older
+// build of ours), UIKit claims physical gamepad input for UI navigation and the GameController framework, and with it
+// SDL, never sees a button press: the pad shows up as connected (hiding the touch overlay) but does nothing. A
+// GCEventInteraction on the window routes gamepad events back to the GameController framework (iOS 17+).
+static void route_gamepad_events_to_game(UIView* view) {
+    if (view == nil) {
+        return;
+    }
+    if (@available(iOS 17.0, *)) {
+        for (id<UIInteraction> interaction in view.interactions) {
+            if ([interaction isKindOfClass:[GCEventInteraction class]]) {
+                return;
+            }
+        }
+        GCEventInteraction* interaction = [[GCEventInteraction alloc] init];
+        interaction.handledEventTypes = GCUIEventTypeGamepad;
+        [view addInteraction:interaction];
+        DK64_LOG("CONTROLLER GCEventInteraction installed on %s %p", NSStringFromClass([view class]).UTF8String, (__bridge void*)view);
+    }
+}
+
+static void log_physical_controllers() {
+    NSArray<GCController*>* controllers = [GCController controllers];
+    DK64_LOG("CONTROLLER GameController framework sees %lu controller(s); SDL sees %d joystick(s)", (unsigned long)controllers.count,
+             SDL_NumJoysticks());
+    for (GCController* controller in controllers) {
+        NSString* category = controller.productCategory ?: @"?";
+        DK64_LOG("CONTROLLER   %s (%s) extended=%d", (controller.vendorName ?: @"unknown").UTF8String, category.UTF8String,
+                 (int)(controller.extendedGamepad != nil));
+    }
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        DK64_LOG("CONTROLLER   SDL[%d] %s gamecontroller=%d virtual=%d", i, SDL_JoystickNameForIndex(i) ?: "?",
+                 (int)SDL_IsGameController(i), (int)SDL_JoystickIsVirtual(i));
+    }
+}
+
 static void create_overlay_window() {
     if (g_overlay_window != nil || g_sdl_window == nullptr) {
         return;
@@ -860,6 +906,7 @@ static void create_overlay_window() {
     overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     controller.view = overlay;
     window.rootViewController = controller;
+    route_gamepad_events_to_game(window);
 
     // Do not make this the key window: SDL's window must stay key for keyboard/text input.
     window.hidden = YES;
@@ -912,8 +959,15 @@ static void install_observers() {
     NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
     NSOperationQueue* main = [NSOperationQueue mainQueue];
     void (^refresh)(NSNotification*) = ^(NSNotification* note) { (void)note; refresh_overlay_state(); };
-    [center addObserverForName:GCControllerDidConnectNotification object:nil queue:main usingBlock:refresh];
-    [center addObserverForName:GCControllerDidDisconnectNotification object:nil queue:main usingBlock:refresh];
+    void (^controllerChanged)(NSNotification*) = ^(NSNotification* note) {
+        DK64_LOG("CONTROLLER %s: %s", [note.name isEqualToString:GCControllerDidConnectNotification] ? "connected" : "disconnected",
+                 ([(GCController*)note.object vendorName] ?: @"unknown").UTF8String);
+        refresh_overlay_state();
+        // SDL adds/removes its joystick on the same notification; log what both sides see once that has happened.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ log_physical_controllers(); });
+    };
+    [center addObserverForName:GCControllerDidConnectNotification object:nil queue:main usingBlock:controllerChanged];
+    [center addObserverForName:GCControllerDidDisconnectNotification object:nil queue:main usingBlock:controllerChanged];
     // Fires when the on-screen gamepad switch changes in the iOS Settings app.
     [center addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:main usingBlock:refresh];
     [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:main usingBlock:refresh];
@@ -934,8 +988,10 @@ extern "C" void dk64_ios_touch_controls_init(void* sdl_window) {
     }
     g_sdl_window = (SDL_Window*)sdl_window;
     run_on_main(^{
+        route_gamepad_events_to_game((__bridge UIView*)dk64_ios_ui_window());
         install_observers();
         refresh_overlay_state();
+        log_physical_controllers();
     });
 }
 
