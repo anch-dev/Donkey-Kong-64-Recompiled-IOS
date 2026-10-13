@@ -618,6 +618,14 @@ jobs:
           cp -R assets/. "$APP/assets/"
           cp recompcontrollerdb.txt "$APP/"
           cp -R .github/ios/Settings.bundle "$APP/Settings.bundle"
+          # App icon: the iPhone/iPad sizes named in Info.plist's CFBundleIcons, scaled from the 1024px master.
+          ICON=.github/ios/icon/AppIcon-1024.png
+          sips -z 120 120 "$ICON" --out "$APP/AppIcon60x60@2x.png" >/dev/null
+          sips -z 180 180 "$ICON" --out "$APP/AppIcon60x60@3x.png" >/dev/null
+          sips -z 120 120 "$ICON" --out "$APP/AppIcon60x60@2x~ipad.png" >/dev/null
+          sips -z 152 152 "$ICON" --out "$APP/AppIcon76x76@2x~ipad.png" >/dev/null
+          sips -z 167 167 "$ICON" --out "$APP/AppIcon83.5x83.5@2x~ipad.png" >/dev/null
+          ls -l "$APP"/AppIcon*.png
           echo "APP=$APP" >> "$GITHUB_ENV"
 
       - name: Package unsigned IPA
