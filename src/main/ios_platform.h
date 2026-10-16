@@ -17,6 +17,12 @@ void dk64_ios_fix_metal_layer_scale(void* ui_window, void* metal_layer);
 // Rotates every window scene to landscape now, and again whenever the app becomes active. Needed because the Info.plist
 // orientation list is ignored when running inside LiveContainer (the host app's list applies, which allows portrait).
 void dk64_ios_force_landscape(void);
+// Saves (ios_saves.mm): makes the save and mods folders visible in the Files app (Documents/Saves, Documents/Mods),
+// moving existing data there, and backs the save up to Documents/Saves/Backups if it changed. Call before the game starts.
+void dk64_ios_prepare_save_folders(void);
+// Shows the launcher's "Saves & ROM" sheet: export/import the save, open the saves folder, and (if a ROM is loaded)
+// replace the ROM, which reports back through `replace_rom_done`.
+void dk64_ios_show_data_menu(int rom_ready, DK64PickDone replace_rom_done);
 
 #ifdef __cplusplus
 }

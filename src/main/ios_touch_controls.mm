@@ -159,6 +159,20 @@ static const CFTimeInterval kMinHoldSeconds = 0.040;  // ~one 30 Hz game frame: 
 static const CGFloat kHitSlop = 8.0;                  // forgiving press area around a button
 static const CGFloat kHoldSlop = 26.0;                // a finger may drift this far before it leaves its button
 
+// Light tap on each button press so presses can be felt without looking. Toggle: "Haptic feedback" in the app's Settings.
+static void DK64PressHaptic(void) {
+    static UIImpactFeedbackGenerator* generator = nil;
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    if ([defaults objectForKey:@"dk64_haptics_enabled"] != nil && ![defaults boolForKey:@"dk64_haptics_enabled"]) {
+        return;
+    }
+    if (generator == nil) {
+        generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+    }
+    [generator impactOccurred];
+    [generator prepare];  // keeps the Taptic Engine warm so the next press is felt without delay
+}
+
 @interface DK64TouchOverlayView : UIView
 @end
 
@@ -665,6 +679,7 @@ static NSString* DK64ActionLabel(DK64Action action) {
     if (!control.pressed) {
         control.pressed = YES;
         control.pressedAt = CACurrentMediaTime();
+        DK64PressHaptic();
     }
 }
 

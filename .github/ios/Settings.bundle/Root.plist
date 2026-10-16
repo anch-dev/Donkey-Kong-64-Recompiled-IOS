@@ -24,6 +24,16 @@
             <key>DefaultValue</key>
             <true/>
         </dict>
+        <dict>
+            <key>Type</key>
+            <string>PSToggleSwitchSpecifier</string>
+            <key>Title</key>
+            <string>Haptic feedback</string>
+            <key>Key</key>
+            <string>dk64_haptics_enabled</string>
+            <key>DefaultValue</key>
+            <true/>
+        </dict>
     </array>
 </dict>
 </plist>

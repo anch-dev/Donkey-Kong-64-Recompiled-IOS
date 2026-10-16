@@ -782,7 +782,7 @@ void reorder_texture_pack(recomp::mods::ModContext&) {
 }
 
 #if defined(DK64_IOS)
-// ---- iOS launcher: centred button column, explicit ROM state, "Replace ROM" ----------------------------------------
+// ---- iOS launcher: centred button column, explicit ROM state, "Saves & ROM" -----------------------------------------
 namespace {
 struct IosRomMenuState {
     recompui::GameOption* start_option = nullptr;
@@ -840,9 +840,10 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
     game_options_menu->add_setup_controls_option();
     game_options_menu->add_settings_option();
     game_options_menu->add_mods_option();
-    if (rom_ready) {
-        game_options_menu->add_option("Replace ROM", []() { dk64_ios_pick_rom_async(&ios_replace_rom_done, nullptr); });
-    }
+    // Save export/import, the saves folder and Replace ROM share one button so the column still fits on a phone.
+    game_options_menu->add_option("Saves & ROM", []() {
+        dk64_ios_show_data_menu(recomp::is_rom_valid(g_ios_rom_menu.game_id) ? 1 : 0, &ios_replace_rom_done);
+    });
     game_options_menu->add_exit_option();
 
     const recompui::Color text_color{ 0xFF, 0xE0, 0x66, 0xFF };
@@ -1024,6 +1025,7 @@ int main(int argc, char** argv) {
     // Initialize SDL audio and set the output frequency.
 #if defined(DK64_IOS)
     dk64_ios_prepare_filesystem();
+    dk64_ios_prepare_save_folders();
     dk64_ios_import_rom_from_documents();
     dk64_ios_prepare_audio();
 #endif

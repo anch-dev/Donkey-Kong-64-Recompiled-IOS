@@ -13,6 +13,7 @@
 #include "ios_touch_controls.h"
 #include "ios_log.h"
 #import "ios_rom_import.h"
+#import "ios_ui.h"
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -144,9 +145,13 @@ static void DK64PresentPicker(BOOL multiple, int attempt, DK64PickCompletion com
     });
 }
 
-static void DK64ShowAlert(NSString *title, NSString *message) {
+UIViewController *dk64_ios_top_view_controller(void) {
     UIWindow *sdlWindow = DK64SDLWindow();
-    UIViewController *top = sdlWindow.rootViewController != nil ? DK64TopViewController(sdlWindow.rootViewController) : nil;
+    return sdlWindow.rootViewController != nil ? DK64TopViewController(sdlWindow.rootViewController) : nil;
+}
+
+static void DK64ShowAlert(NSString *title, NSString *message) {
+    UIViewController *top = dk64_ios_top_view_controller();
     if (top == nil) {
         DK64_LOG("ALERT (no UI): %s - %s", title.UTF8String, message.UTF8String);
         return;
@@ -162,6 +167,16 @@ static void DK64DiscardPickerCopy(NSURL *url) {
     if ([path hasPrefix:NSTemporaryDirectory()] || [path containsString:@"/tmp/"] || [path containsString:@"/Inbox/"]) {
         [[NSFileManager defaultManager] removeItemAtURL:url error:nil];
     }
+}
+
+void dk64_ios_show_alert(NSString *title, NSString *message) { DK64ShowAlert(title, message); }
+
+void dk64_ios_discard_picker_copy(NSURL *url) { DK64DiscardPickerCopy(url); }
+
+void dk64_ios_pick_file(void (^completion)(NSURL *url, NSString *error)) {
+    DK64PresentPicker(NO, 0, ^(NSArray<NSURL *> *urls, NSString *error) {
+        completion(urls.firstObject, error);
+    });
 }
 
 // Asynchronous ROM picker used by the launcher. `done` is always called exactly once, on the main thread.
